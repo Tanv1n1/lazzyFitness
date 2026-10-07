@@ -87,8 +87,16 @@ def now_iso():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+IST = timezone(timedelta(hours=5, minutes=30))   # the app is for Pune: phones date their days in India time
+
+
+def today_date():
+    """Today in India. A cloud server runs in UTC, which is a day behind from midnight to 5:30 am IST."""
+    return datetime.now(IST).date()
+
+
 def today():
-    return date.today().isoformat()
+    return today_date().isoformat()
 
 
 def admin_token():
@@ -384,7 +392,7 @@ def user_row(u, logs, today_s):
 
 def all_users(c):
     today_s = today()
-    since = (date.today() - timedelta(days=60)).isoformat()
+    since = (today_date() - timedelta(days=60)).isoformat()
     logs = {}
     for r in c.execute("SELECT user_id, day, done_count, entries FROM daily WHERE day >= ?", (since,)):
         logs.setdefault(r["user_id"], []).append(r)
@@ -507,7 +515,7 @@ class Handler(BaseHTTPRequestHandler):
                     u = next((x for x in all_users(c) if x["id"] == m.group(1)), None)
                     if not u:
                         return self._send(404, {"error": "not found"})
-                    since = (date.today() - timedelta(days=29)).isoformat()
+                    since = (today_date() - timedelta(days=29)).isoformat()
                     logs = [{"day": r["day"], "done": json.loads(r["done"]), "done_count": r["done_count"],
                              "entries": json.loads(r["entries"] or "{}"), "water": r["water"]}
                             for r in c.execute("SELECT * FROM daily WHERE user_id=? AND day>=? ORDER BY day",

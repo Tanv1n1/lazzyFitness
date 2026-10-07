@@ -12,9 +12,16 @@ import time
 import urllib.error
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import urllib.request
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 PORT = 8123
+IST = timezone(timedelta(hours=5, minutes=30))   # the server counts days in India time
+
+
+def today():
+    return datetime.now(IST).date()
+
+
 FAKE_PORT = 8124
 BASE = f"http://127.0.0.1:{PORT}"
 ADMIN = "selftest-admin-token"
@@ -84,7 +91,7 @@ def user_session(i):
     hdr = {"X-User-Id": r["user_id"], "X-User-Key": r["user_key"]}
     sent = {}
     for d in range(7):
-        day = (date.today() - timedelta(days=d)).isoformat()
+        day = (today() - timedelta(days=d)).isoformat()
         done = random.sample(STEPS, random.randint(3, 9))
         c, _ = req("POST", "/api/sync", {"day": day, "done": done}, hdr)
         sent[day] = len(set(done))
@@ -146,7 +153,7 @@ def main():
 
         uid0 = results[0][1]
         some_user = {"X-User-Id": uid0, "X-User-Key": "wrong"}
-        check("wrong user key is refused", req("POST", "/api/sync", {"day": date.today().isoformat(), "done": []}, some_user)[0] == 401)
+        check("wrong user key is refused", req("POST", "/api/sync", {"day": today().isoformat(), "done": []}, some_user)[0] == 401)
         check("admin API refuses no token", req("GET", "/admin/api/users")[0] == 401)
 
         c, _ = req("POST", "/api/plan", {"profile": {}}, {"X-User-Id": uid0, "X-User-Key": "wrong"})
@@ -166,7 +173,7 @@ def main():
         check("daily AI limit stops the third", req("POST", "/api/plan", plan_body, hdr0)[0] == 429)
 
         # skipped and replaced steps, change requests and water
-        day = date.today().isoformat()
+        day = today().isoformat()
         entries = {"lunch": {"s": "replaced", "text": "Poha and chai", "kcal": 450, "note": "less oil please"},
                    "dinner": {"s": "skipped", "text": "Ate out"},
                    "bogus": {"s": "skipped"}, "mid": {"s": "hacked"}}
