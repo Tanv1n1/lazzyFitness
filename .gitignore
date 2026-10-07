@@ -23,3 +23,6 @@ __pycache__/
 *.zip
 .DS_Store
 backend/.current_tunnel_url
+
+# private values: fill in by hand, never commit
+secrets*.json

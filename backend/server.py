@@ -243,7 +243,8 @@ def ask_openai_compat(prompt, image_b64=None):
         data=json.dumps({"model": COMPAT_MODEL,
                          "max_tokens": 2000 if image_b64 else 6000,
                          "messages": [{"role": "user", "content": content}]}).encode(),
-        headers={"Authorization": "Bearer " + AI_API_KEY, "Content-Type": "application/json"})
+        # Some gateways refuse Python's default client name outright (HTTP 403), so name ourselves.
+        headers={"Authorization": "Bearer " + AI_API_KEY, "Content-Type": "application/json", "User-Agent": "LazyFitness/1.0"})
     try:
         with urllib.request.urlopen(req, timeout=110) as r:
             return json.loads(r.read())["choices"][0]["message"]["content"], None
