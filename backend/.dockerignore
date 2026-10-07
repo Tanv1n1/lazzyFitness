@@ -1,0 +1,4 @@
+__pycache__/
+*.db*
+.admin_token
+.invite_code

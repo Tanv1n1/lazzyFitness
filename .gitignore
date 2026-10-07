@@ -1,0 +1,24 @@
+# secrets and runtime data
+backend/.admin_token
+backend/.invite_code
+backend/*.db
+backend/*.db-*
+backend/.run.log
+backend/.tunnel.log
+.build.log
+*.env
+
+# build output and IDE
+android/.gradle/
+android/.idea/
+android/.kotlin/
+android/build/
+android/app/build/
+android/local.properties
+*.iml
+__pycache__/
+
+# artefacts that are shared directly, not committed
+*.apk
+*.zip
+.DS_Store

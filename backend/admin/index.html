@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lazy Fitness Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;800&family=Hanken+Grotesk:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* Layout: left-aligned dashboard. Summary KPIs, then trends, then the user table; user detail slides in from the right. */
+:root{
+  --bg:#EEF1EC; --surface:#FFFFFF; --ink:#14201B; --muted:#5C6B64; --line:#D9DFDA;
+  --accent:#E0A100; --accent-ink:#14201B; --ok:#2F7D5B; --warn:#B7791F; --bad:#9B2C4B; --water:#2D7DA8;
+  --heat0:#E3E8E4; --heat1:#BFD9CB; --heat2:#7FB99B; --heat3:#2F7D5B;
+  --f-display:"Bricolage Grotesque",system-ui,sans-serif; --f-body:"Hanken Grotesk",system-ui,sans-serif; --f-mono:"DM Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0E1714; --surface:#16231F; --ink:#E8EFEA; --muted:#93A59C; --line:#27382F;
+  --accent:#F2B825; --accent-ink:#10231D; --ok:#5DBB92; --warn:#E0A74A; --bad:#E27A98; --water:#6BB6DE;
+  --heat0:#21332B; --heat1:#2C5342; --heat2:#3F8A68; --heat3:#6FD3A4; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0E1714; --surface:#16231F; --ink:#E8EFEA; --muted:#93A59C; --line:#27382F;
+  --accent:#F2B825; --accent-ink:#10231D; --ok:#5DBB92; --warn:#E0A74A; --bad:#E27A98; --water:#6BB6DE;
+  --heat0:#21332B; --heat1:#2C5342; --heat2:#3F8A68; --heat3:#6FD3A4; color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 var(--f-body);padding-inline:16px}
+.wrap{max-width:1180px;margin:0 auto;padding-block:20px 56px}
+h1,h2,h3{font-family:var(--f-display);margin:0;text-wrap:balance}
+h1{font-size:26px;font-weight:800;letter-spacing:-.01em}
+h2{font-size:17px;font-weight:600}
+.mono,td.num,.kpi b,.tick{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+header.top{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-bottom:20px}
+.brand{display:flex;align-items:center;gap:10px}
+.dot{width:12px;height:12px;border-radius:50%;background:var(--accent)}
+.actions{display:flex;gap:8px;align-items:center}
+button,select,input{font:inherit;color:inherit}
+.btn{border:1px solid var(--line);background:var(--surface);padding:7px 12px;border-radius:8px;cursor:pointer}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.btn.danger{color:var(--bad);border-color:var(--bad)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.notice{background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--accent);padding:10px 14px;border-radius:8px;margin-bottom:16px;color:var(--muted);font-size:14px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px}
+.kpi span{display:block;color:var(--muted);font-size:13px}
+.kpi b{display:block;font-size:28px;font-weight:500;margin-top:2px}
+.kpi small{color:var(--muted);font-size:12px}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:16px;margin-bottom:20px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;min-width:0}
+.panel h2{margin-bottom:10px}
+.sub{color:var(--muted);font-size:13px;margin:-6px 0 10px}
+svg{display:block;width:100%;height:auto;overflow:visible}
+.tick{fill:var(--muted);font-size:10px}
+.bars{display:grid;gap:8px}
+.barrow{display:grid;grid-template-columns:96px 1fr 44px;gap:10px;align-items:center;font-size:14px}
+.barrow .track{height:10px;background:var(--heat0);border-radius:5px;overflow:hidden}
+.barrow .fill{height:100%;background:var(--ok);border-radius:5px}
+.barrow .fill.low{background:var(--bad)} .barrow .fill.mid{background:var(--warn)}
+.barrow .v{font-family:var(--f-mono);text-align:right;color:var(--muted);font-size:13px}
+.dist{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:14px}
+.dist h3{font-size:13px;color:var(--muted);font-weight:600;margin-bottom:6px;text-transform:uppercase;letter-spacing:.06em}
+.dist div{display:flex;justify-content:space-between;gap:8px;font-size:14px;padding:2px 0}
+.tools{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.tools input,.tools select{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:7px 10px}
+.tools input{flex:1;min-width:180px}
+.tablewrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;min-width:820px}
+th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+th{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600;cursor:pointer;user-select:none}
+th.sorted::after{content:" \2193"} th.sorted.asc::after{content:" \2191"}
+tbody tr{cursor:pointer} tbody tr:hover{background:var(--bg)}
+td.num{text-align:right} th.num{text-align:right}
+.pill{display:inline-block;padding:1px 8px;border-radius:99px;font-size:12px;border:1px solid var(--line);margin-right:4px}
+.pill.ok{color:var(--ok);border-color:var(--ok)} .pill.bad{color:var(--bad);border-color:var(--bad)} .pill.warn{color:var(--warn);border-color:var(--warn)}
+.mini{display:inline-block;width:70px;height:6px;background:var(--heat0);border-radius:3px;vertical-align:middle;margin-right:6px;overflow:hidden}
+.mini i{display:block;height:100%;background:var(--ok)}
+aside#drawer{position:fixed;inset:0 0 0 auto;width:min(480px,100%);background:var(--surface);border-left:1px solid var(--line);padding:20px 20px 40px;overflow:auto;transform:translateX(102%);transition:transform .2s;z-index:5;padding-top:calc(20px + env(safe-area-inset-top,0px))}
+aside#drawer.open{transform:none}
+@media (prefers-reduced-motion:reduce){aside#drawer{transition:none}}
+.kv{display:grid;grid-template-columns:130px 1fr;gap:6px 12px;font-size:14px;margin:12px 0 18px}
+.kv dt{color:var(--muted)} .kv dd{margin:0;overflow-wrap:anywhere}
+.heat{display:grid;grid-template-columns:repeat(15,1fr);gap:4px;margin:8px 0 4px}
+.heat i{aspect-ratio:1;border-radius:3px;background:var(--heat0)}
+.heat i.l1{background:var(--heat1)} .heat i.l2{background:var(--heat2)} .heat i.l3{background:var(--heat3)}
+.legend{font-size:12px;color:var(--muted)}
+.scrim{position:fixed;inset:0;background:#0006;z-index:4;display:none} .scrim.on{display:block}
+#login{max-width:380px;margin:12vh auto;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:24px}
+#login input{width:100%;margin:12px 0;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px}
+.err{color:var(--bad);min-height:1.4em;font-size:14px}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<div id="login" hidden>
+  <h1>Lazy Fitness Admin</h1>
+  <p style="color:var(--muted);margin:6px 0 0">Enter the admin token printed when the server started.</p>
+  <label for="tok" class="sr" style="position:absolute;left:-9999px">Admin token</label>
+  <input id="tok" type="password" autocomplete="off" placeholder="Admin token">
+  <button class="btn primary" id="go" style="width:100%">Open dashboard</button>
+  <div class="err" id="loginerr"></div>
+</div>
+
+<div class="wrap" id="app" hidden>
+  <header class="top">
+    <div class="brand"><span class="dot"></span><h1>Lazy Fitness Admin</h1></div>
+    <div class="actions">
+      <span class="mono" id="stamp" style="color:var(--muted);font-size:12px"></span>
+      <button class="btn" id="refresh">Refresh</button>
+      <button class="btn" id="theme">Theme</button>
+      <button class="btn" id="out">Sign out</button>
+    </div>
+  </header>
+  <section class="kpis" id="kpis"></section>
+  <section class="grid2">
+    <div class="panel"><h2>Average completion, last 14 days</h2><p class="sub">Share of the 9 daily steps ticked, across users who logged that day.</p><div id="c1"></div></div>
+    <div class="panel"><h2>Users who logged each day</h2><p class="sub">Daily active users.</p><div id="c2"></div></div>
+  </section>
+  <section class="grid2">
+    <div class="panel"><h2>Which steps get done</h2><p class="sub">Last 7 days, share of logged days where the step was ticked.</p><div class="bars" id="adh"></div></div>
+    <div class="panel"><h2>Who the users are</h2><p class="sub">Count of users.</p><div class="dist" id="dist"></div></div>
+  </section>
+  <section class="panel">
+    <h2>Users</h2>
+    <div class="tools">
+      <input id="q" type="search" placeholder="Search by username" aria-label="Search by username">
+      <select id="fgoal" aria-label="Filter by goal"><option value="">All goals</option><option value="lose">Lose fat</option><option value="gain">Gain muscle</option><option value="maintain">Maintain</option></select>
+      <select id="fstat" aria-label="Filter by status"><option value="">All users</option><option value="today">Logged today</option><option value="risk">At risk (3+ days quiet)</option><option value="cond">Has a medical flag</option></select>
+    </div>
+    <div class="tablewrap"><table>
+      <thead><tr id="thead"></tr></thead><tbody id="rows"></tbody>
+    </table></div>
+    <p id="empty" class="sub" hidden>No users match.</p>
+  </section>
+</div>
+
+<div class="scrim" id="scrim"></div>
+<aside id="drawer" aria-label="User detail"></aside>
+
+<script>
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const GOAL={lose:"Lose fat",gain:"Gain muscle",maintain:"Maintain"},DIET={veg:"Veg",egg:"Egg",nonveg:"Non-veg"};
+const COND={diabetes:"Diabetes",thyroid:"Thyroid",pcos:"PCOS",bp:"High BP",chol:"Cholesterol",acidity:"Acidity",lactose:"Lactose",gluten:"Gluten",kidney:"Kidney",other:"Other"};
+const STEP={water:"Morning water",workout:"Workout",breakfast:"Breakfast",mid:"Mid-morning",lunch:"Lunch",eve:"Evening snack",dinner:"Dinner",prebed:"Pre-bed",sleep:"Sleep on time"};
+let TOKEN=null,USERS=[],SUM=null,sort={k:"last_log",asc:false};
+try{TOKEN=sessionStorage.getItem("fc_admin")}catch(e){}
+
+async function api(path,opt={}){
+  const r=await fetch(path,{...opt,headers:{Authorization:"Bearer "+TOKEN,...(opt.headers||{})}});
+  if(r.status===401){signOut();throw new Error("unauthorized")}
+  if(!r.ok)throw new Error("request failed");
+  return r.json();
+}
+function signOut(){try{sessionStorage.removeItem("fc_admin")}catch(e){} TOKEN=null;$("#app").hidden=true;$("#login").hidden=false;closeDrawer()}
+$("#out").onclick=signOut;
+$("#go").onclick=async()=>{
+  TOKEN=$("#tok").value.trim();$("#loginerr").textContent="";
+  try{await api("/admin/api/summary");try{sessionStorage.setItem("fc_admin",TOKEN)}catch(e){}start()}
+  catch(e){$("#loginerr").textContent="That token was not accepted."}
+};
+$("#tok").addEventListener("keydown",e=>{if(e.key==="Enter")$("#go").click()});
+$("#theme").onclick=()=>{const d=document.documentElement,dark=getComputedStyle(d).colorScheme==="dark";d.dataset.theme=dark?"light":"dark"};
+$("#refresh").onclick=()=>load();
+
+const mdy=d=>new Date(d+"T00:00:00").toLocaleDateString("en-IN",{day:"numeric",month:"short"});
+function ago(d){if(!d)return"never";const n=Math.round((new Date(SUM.today+"T00:00:00")-new Date(d+"T00:00:00"))/864e5);return n<=0?"today":n===1?"yesterday":n+" days ago"}
+
+function lineChart(el,data,key,max,unit){
+  const W=520,H=170,L=34,R=8,T=10,B=24,n=data.length;
+  const x=i=>L+(W-L-R)*i/(n-1),y=v=>T+(H-T-B)*(1-v/max);
+  let g="";
+  for(let i=0;i<=4;i++){const v=max*i/4;g+=`<line x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text class="tick" x="${L-6}" y="${y(v)+3}" text-anchor="end">${Math.round(v)}</text>`}
+  const pts=data.map((d,i)=>`${x(i)},${y(d[key])}`).join(" ");
+  const area=`${x(0)},${y(0)} ${pts} ${x(n-1)},${y(0)}`;
+  let lab="";data.forEach((d,i)=>{if(i%3===0||i===n-1)lab+=`<text class="tick" x="${x(i)}" y="${H-6}" text-anchor="middle">${mdy(d.day)}</text>`});
+  const last=data[n-1];
+  el.innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(key)} trend">${g}<polygon points="${area}" fill="var(--accent)" opacity=".18"/><polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linejoin="round"/>${lab}<circle cx="${x(n-1)}" cy="${y(last[key])}" r="4.5" fill="var(--accent)"/><text class="tick" x="${x(n-1)}" y="${y(last[key])-9}" text-anchor="end" style="fill:var(--ink);font-size:11px">${last[key]}${unit}</text></svg>`;
+}
+function barChart(el,data,key,max){
+  const W=520,H=170,L=34,R=8,T=10,B=24,n=data.length,bw=(W-L-R)/n;
+  const y=v=>T+(H-T-B)*(1-v/max);
+  let g="";for(let i=0;i<=4;i++){const v=max*i/4;g+=`<line x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text class="tick" x="${L-6}" y="${y(v)+3}" text-anchor="end">${Math.round(v)}</text>`}
+  let b="",lab="";
+  data.forEach((d,i)=>{const x=L+i*bw;b+=`<rect x="${x+3}" y="${y(d[key])}" width="${bw-6}" height="${y(0)-y(d[key])}" rx="2" fill="var(--water)"/>`;if(i%3===0||i===n-1)lab+=`<text class="tick" x="${x+bw/2}" y="${H-6}" text-anchor="middle">${mdy(d.day)}</text>`});
+  el.innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Daily active users">${g}${b}${lab}</svg>`;
+}
+
+function render(){
+  const s=SUM;
+  $("#stamp").textContent="Updated "+new Date(s.generated_at).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"});
+  $("#kpis").innerHTML=[
+    ["Users",s.total_users,`+${s.new_7d} this week`],
+    ["Logged today",s.dau,`${s.total_users?Math.round(100*s.dau/s.total_users):0}% of users`],
+    ["Active, 7 days",s.wau,"logged at least once"],
+    ["Completion, 7 days",s.avg_comp7+"%","average across users"],
+    ["Average streak",s.avg_streak,"days at 6+ of 9 steps"],
+    ["Quiet 3+ days",s.at_risk,"worth a nudge"],
+    ["AI-built plans",s.ai_plan_pct+"%","rest use the offline planner"]
+  ].map(([a,b,c])=>`<div class="kpi"><span>${a}</span><b>${b}</b><small>${c}</small></div>`).join("");
+  lineChart($("#c1"),s.trend,"avg_completion",100,"%");
+  barChart($("#c2"),s.trend,"active",Math.max(4,Math.ceil(Math.max(...s.trend.map(t=>t.active))/4)*4));
+  $("#adh").innerHTML=s.adherence.map(a=>`<div class="barrow"><span>${STEP[a.step]}</span><div class="track"><div class="fill ${a.pct<40?"low":a.pct<65?"mid":""}" style="width:${a.pct}%"></div></div><span class="v">${a.pct}%</span></div>`).join("");
+  const col=(t,o,m)=>`<div><h3>${t}</h3>${Object.entries(o).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<div><span>${esc(m[k]||k)}</span><b class="mono">${v}</b></div>`).join("")||'<div><span style="color:var(--muted)">None yet</span></div>'}</div>`;
+  $("#dist").innerHTML=col("Goal",s.goals,GOAL)+col("Diet",s.diets,DIET)+col("Training",s.places,{home:"Home",gym:"Gym"})+col("Medical flags",s.conditions,COND);
+  head();rows();
+}
+const COLS=[["username","User",0],["goal","Goal",0],["age","Age",1],["weight_kg","Weight",1],["kcal","kcal",1],["today_done","Today",1],["comp7","7-day",1],["streak","Streak",1],["last_log","Last log",0],["conds","Flags",0]];
+function head(){
+  $("#thead").innerHTML=COLS.map(([k,l,n])=>`<th data-k="${k}" class="${n?"num ":""}${sort.k===k?"sorted"+(sort.asc?" asc":""):""}">${l}</th>`).join("");
+  document.querySelectorAll("#thead th").forEach(th=>th.onclick=()=>{const k=th.dataset.k;sort=sort.k===k?{k,asc:!sort.asc}:{k,asc:k==="username"};head();rows()});
+}
+function rows(){
+  const q=$("#q").value.trim().toLowerCase(),fg=$("#fgoal").value,fs=$("#fstat").value,t=SUM.today;
+  let list=USERS.filter(u=>(!q||u.username.toLowerCase().includes(q))&&(!fg||u.goal===fg)&&
+    (!fs||(fs==="today"&&u.last_log===t)||(fs==="cond"&&u.conds.length)||(fs==="risk"&&risk(u))));
+  const k=sort.k,dir=sort.asc?1:-1;
+  list.sort((a,b)=>{let x=a[k],y=b[k];if(k==="conds"){x=a.conds.length;y=b.conds.length}
+    if(x==null)return 1;if(y==null)return -1;return (x>y?1:x<y?-1:0)*dir});
+  $("#empty").hidden=list.length>0;
+  $("#rows").innerHTML=list.map(u=>`<tr data-id="${esc(u.id)}" tabindex="0">
+    <td><b>${esc(u.username)}</b></td>
+    <td>${GOAL[u.goal]||""}</td><td class="num">${u.age}</td><td class="num">${u.weight_kg} kg</td><td class="num">${u.kcal||"-"}</td>
+    <td class="num">${u.today_done}/9</td>
+    <td class="num"><span class="mini"><i style="width:${u.comp7}%"></i></span>${u.comp7}%</td>
+    <td class="num">${u.streak}</td>
+    <td>${risk(u)?'<span class="pill bad">'+ago(u.last_log)+"</span>":ago(u.last_log)}</td>
+    <td>${u.conds.map(c=>`<span class="pill warn">${esc(COND[c]||c)}</span>`).join("")||'<span style="color:var(--muted)">None</span>'}</td></tr>`).join("");
+  document.querySelectorAll("#rows tr").forEach(r=>{r.onclick=()=>openUser(r.dataset.id);r.onkeydown=e=>{if(e.key==="Enter")openUser(r.dataset.id)}});
+}
+function risk(u){const t=new Date(SUM.today+"T00:00:00"),ref=u.last_log||u.created_at.slice(0,10);return Math.round((t-new Date(ref+"T00:00:00"))/864e5)>=(u.last_log?3:2)}
+["q","fgoal","fstat"].forEach(i=>$("#"+i).addEventListener("input",rows));
+
+function closeDrawer(){$("#drawer").classList.remove("open");$("#scrim").classList.remove("on")}
+$("#scrim").onclick=closeDrawer;
+document.addEventListener("keydown",e=>{if(e.key==="Escape")closeDrawer()});
+async function openUser(id){
+  const d=await api("/admin/api/users/"+encodeURIComponent(id)),u=d.user,logs=Object.fromEntries(d.logs.map(l=>[l.day,l]));
+  const days=[];for(let i=29;i>=0;i--){const x=new Date(SUM.today+"T00:00:00");x.setDate(x.getDate()-i);days.push(x.toISOString().slice(0,10))}
+  const cell=day=>{const n=logs[day]?logs[day].done_count:null;const c=n==null?"":n>=8?"l3":n>=6?"l2":"l1";return `<i class="${c}" title="${mdy(day)}: ${n==null?"no log":n+" of 9"}"></i>`};
+  const missed={};d.logs.forEach(l=>Object.keys(STEP).forEach(s=>{if(!l.done.includes(s))missed[s]=(missed[s]||0)+1}));
+  const topMiss=Object.entries(missed).sort((a,b)=>b[1]-a[1]).slice(0,3);
+  $("#drawer").innerHTML=`<div style="display:flex;justify-content:space-between;align-items:start;gap:12px"><div><h2 style="font-size:22px">${esc(u.username)}</h2><div style="color:var(--muted)">${u.age} yrs, ${esc(u.sex)}, ${u.height_cm} cm, ${u.weight_kg} kg</div></div><button class="btn" id="x">Close</button></div>
+  <dl class="kv"><dt>Goal</dt><dd>${GOAL[u.goal]}</dd><dt>Daily target</dt><dd class="mono">${u.kcal||"-"} kcal, ${u.protein||"-"} g protein</dd><dt>Diet</dt><dd>${DIET[u.diet]}</dd><dt>Training</dt><dd>${u.place==="gym"?"Gym":"Home"}, ${u.wtime}</dd><dt>Wake / sleep</dt><dd class="mono">${esc(u.wake)} / ${esc(u.sleep)}</dd><dt>Medical flags</dt><dd>${u.conds.map(c=>`<span class="pill warn">${esc(COND[c]||c)}</span>`).join("")||"None"}</dd><dt>Plan built by</dt><dd>${u.plan_source==="ai"?"Claude (AI)":"Offline planner"}</dd><dt>Joined</dt><dd>${mdy(u.created_at.slice(0,10))}</dd><dt>Streak</dt><dd class="mono">${u.streak} days</dd></dl>
+  <h2>Last 30 days</h2><div class="heat">${days.map(cell).join("")}</div><div class="legend">Darker means more of the 9 steps done. Blank means no log.</div>
+  <h2 style="margin-top:18px">Most missed steps</h2><dl class="kv">${topMiss.map(([s,n])=>`<dt>${STEP[s]}</dt><dd class="mono">skipped on ${n} of ${d.logs.length} logged days</dd>`).join("")||'<dt>None</dt><dd>No logs yet</dd>'}</dl>
+  <div style="margin-top:24px;border-top:1px solid var(--line);padding-top:16px"><button class="btn danger" id="del">Delete this user and their logs</button><div id="confirm" hidden style="margin-top:10px">This cannot be undone. <button class="btn danger" id="yes">Yes, delete</button> <button class="btn" id="no">Cancel</button></div></div>`;
+  $("#drawer").classList.add("open");$("#scrim").classList.add("on");
+  $("#x").onclick=closeDrawer;$("#del").onclick=()=>{$("#confirm").hidden=false};$("#no").onclick=()=>{$("#confirm").hidden=true};
+  $("#yes").onclick=async()=>{await api("/admin/api/users/"+encodeURIComponent(id),{method:"DELETE"});closeDrawer();load()};
+}
+async function load(){[SUM,{users:USERS}]=await Promise.all([api("/admin/api/summary"),api("/admin/api/users")]);render()}
+function start(){$("#login").hidden=true;$("#app").hidden=false;load().catch(()=>{})}
+if(TOKEN){start()}else{$("#login").hidden=false}
+</script>
+</body>
+</html>
