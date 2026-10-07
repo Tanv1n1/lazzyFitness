@@ -62,8 +62,11 @@ class FakeProvider(BaseHTTPRequestHandler):
         body = self.rfile.read(int(self.headers.get("Content-Length") or 0)).decode()
         fake_seen.append((self.path, self.headers.get("Authorization"), body))
         reply = FAKE_MEAL_READING if '"image_url"' in body else FAKE_REPLY
-        out = json.dumps({"choices": [{"message": {"content": "Here you go:\n" + json.dumps(reply)}}]}).encode()
-        self.send_response(200)
+        text = "Here you go:\n" + json.dumps(reply)
+        if json.loads(body).get("model") == "bad-model":      # the main model answers with no JSON, so the fallback must step in
+            text = "Sorry, I cannot do that."
+        out = json.dumps({"choices": [{"message": {"content": text}}]}).encode()
+        self.send_response(429 if "force busy" in body else 200)    # lets a test play a provider that says "slow down"
         self.send_header("Content-Length", str(len(out)))
         self.end_headers()
         self.wfile.write(out)
@@ -108,7 +111,8 @@ def main():
     tmp = tempfile.mkdtemp()
     env = {**os.environ, "FITCOACH_DB": os.path.join(tmp, "t.db"), "ADMIN_TOKEN": ADMIN, "PORT": str(PORT),
            "INVITE_CODE": INVITE, "MAX_USERS": "5", "AI_DAILY_LIMIT": "2", "AI_PHOTO_DAILY_LIMIT": "2",
-           "AI_BASE_URL": f"http://127.0.0.1:{FAKE_PORT}/v1", "AI_API_KEY": "test-key", "AI_MODEL": "fake-model"}
+           "AI_BASE_URL": f"http://127.0.0.1:{FAKE_PORT}/v1", "AI_API_KEY": "test-key", "AI_MODEL": "bad-model",
+           "AI_FALLBACK_MODELS": "fake-model", "AI_VISION_MODEL": "fake-model"}
     fake = HTTPServer(("127.0.0.1", FAKE_PORT), FakeProvider)
     threading.Thread(target=fake.serve_forever, daemon=True).start()
     srv = subprocess.Popen([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "server.py")],
@@ -168,7 +172,11 @@ def main():
         check("provider call uses the bearer key and chat/completions", path == "/v1/chat/completions" and auth == "Bearer test-key", f"{path} {auth}")
         check("username never reaches the provider", "Tester0" not in sent)
         check("health data the plan needs does reach it", "diabetes" in sent and "peanut allergy" in sent)
-        check("bad profile is refused before any provider call", req("POST", "/api/plan", {"profile": {"age": 3}}, hdr0)[0] == 400 and len(fake_seen) == 1)
+        models_asked = [json.loads(b)["model"] for _, _, b in fake_seen]
+        check("a failed main model falls back to the next one", models_asked == ["bad-model", "fake-model"], str(models_asked))
+        calls_before = len(fake_seen)
+        check("bad profile is refused before any provider call",
+              req("POST", "/api/plan", {"profile": {"age": 3}}, hdr0)[0] == 400 and len(fake_seen) == calls_before)
         check("second plan allowed", req("POST", "/api/plan", plan_body, hdr0)[0] == 200)
         check("daily AI limit stops the third", req("POST", "/api/plan", plan_body, hdr0)[0] == 429)
 
@@ -204,6 +212,19 @@ def main():
               req("POST", "/api/meal-photo", {"image": jpeg}, {"X-User-Id": results[0][1], "X-User-Key": "x"})[0] == 401)
         check("second photo allowed", req("POST", "/api/meal-photo", {"image": jpeg}, hdr0)[0] == 200)
         check("daily photo limit stops the third", req("POST", "/api/meal-photo", {"image": jpeg}, hdr0)[0] == 429)
+
+        # replies that are almost JSON
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import server
+        check("a trailing comma in the reply is tolerated", server.parse_json_reply('Sure: {"a": [1, 2,], "b": 1,} done')[0] == {"a": [1, 2], "b": 1})
+        check("a plan missing meal slots is rejected", server.plan_from_reply({"meals": {"breakfast": [FAKE_MEAL]}})[0] is None)
+        check("a complete plan is accepted", server.plan_from_reply(FAKE_REPLY)[0] is not None)
+        check("a reply with no JSON is reported", server.parse_json_reply("no braces here")[0] is None)
+
+        # a provider that is rate limited
+        hdr1 = {"X-User-Id": results[1][1], "X-User-Key": results[1][4]}
+        c, busy = req("POST", "/api/plan", {"profile": {**profile(1), "other": "force busy"}}, hdr1)
+        check("provider rate limit becomes a busy reply", c == 429 and busy.get("error") == "ai_busy", f"{c} {busy}")
 
         # a user deletes their own data, which frees a slot
         uid4, key4 = results[4][1], results[4][4]

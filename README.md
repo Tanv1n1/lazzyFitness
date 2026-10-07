@@ -44,7 +44,17 @@ export AI_MODEL=the-model-id-as-that-provider-names-it
 Without either, the app uses its offline planner. The consent text in the app names a third-party AI service, so only
 enable a provider you are willing to name to your users.
 
-Meal photo reading needs a model that accepts images, so `AI_MODEL` must be one that can see them.
+Optional extras for the OpenAI-compatible provider:
+
+| Variable | Use |
+|---|---|
+| `AI_FALLBACK_MODELS` | comma-separated model ids tried in order when the main model errors or returns broken JSON. A lone model is tried twice |
+| `AI_VISION_MODEL` | the model that reads meal photos. It must accept images. Defaults to `AI_MODEL` |
+| `AI_MIN_GAP_SECONDS` | spacing between provider calls, for a requests-per-minute cap (`12.5` for 5 per minute) |
+
+Replies are parsed leniently (code fences and trailing commas are tolerated). If the provider is busy or its balance is
+empty, the app quietly falls back to the offline planner and photo reading says to type instead. The reason is in the
+server log as `AI call failed: ...`.
 
 Limits for a small test: `INVITE_CODE`, `MAX_USERS` (10 in `run_test.sh`), `AI_DAILY_LIMIT` (3 plans per user per day),
 `AI_PHOTO_DAILY_LIMIT` (10 photo reads per user per day), `AI_ENABLED=0`, admin lockout after 20 wrong tokens.

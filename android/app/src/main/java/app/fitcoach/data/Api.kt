@@ -89,7 +89,10 @@ object Api {
                     MealReading((0 until arr.length()).map { arr.getString(it) }, if (j.has("kcal")) j.getInt("kcal") else null, j.optString("note", ""))
                 }
                 503 -> fail("Photo reading is not switched on yet. Type what you ate instead.")
-                429 -> fail("You have used today's photo reads. Type what you ate instead.")
+                429 -> fail(
+                    if (r.body.contains("ai_busy")) "Photo reading is busy right now. Try again in a minute, or type what you ate."
+                    else "You have used today's photo reads. Type what you ate instead."
+                )
                 else -> fail(runCatching { JSONObject(r.body).getString("error") }.getOrDefault("Could not read that photo."))
             }
         }.getOrElse { fail("Could not reach the server. Type what you ate instead.") }

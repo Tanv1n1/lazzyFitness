@@ -36,6 +36,10 @@ AI_MODEL = os.environ.get("FITCOACH_MODEL", "claude-opus-5-5")
 AI_BASE_URL = os.environ.get("AI_BASE_URL", "").rstrip("/")     # set = use an OpenAI-compatible provider instead of Anthropic
 AI_API_KEY = os.environ.get("AI_API_KEY", "")
 COMPAT_MODEL = os.environ.get("AI_MODEL", "")                    # model id exactly as that provider names it
+FALLBACK_MODELS = [m.strip() for m in os.environ.get("AI_FALLBACK_MODELS", "").split(",") if m.strip()]  # tried in order if the main model fails
+VISION_MODEL = os.environ.get("AI_VISION_MODEL", "")             # model that reads meal photos; defaults to AI_MODEL
+AI_MIN_GAP = float(os.environ.get("AI_MIN_GAP_SECONDS", "0"))    # spacing between provider calls, for a requests-per-minute cap (12.5 = 5 per minute)
+_ai_lock, _ai_last = threading.Lock(), [0.0]
 AI_ENABLED = os.environ.get("AI_ENABLED", "1") != "0"
 AI_DAILY_LIMIT = int(os.environ.get("AI_DAILY_LIMIT", "3"))     # AI plans per user per day (cost cap)
 PHOTO_DAILY_LIMIT = int(os.environ.get("AI_PHOTO_DAILY_LIMIT", "10"))   # meal photo reads per user per day
@@ -200,13 +204,14 @@ def build_prompt(profile):
         "- No supplements, no drug advice, no medical claims.\n"
         "- Every option has: name (short), items (3 to 5 strings with quantities), skip (2 to 3 Pune-specific things "
         "to avoid at this meal for this person).\n"
+        "- Be brief: names up to 4 words, each item up to 8 words, each skip up to 6 words.\n"
         f"- Option counts: {json.dumps(SLOTS)}.\n"
-        "Reply with only JSON: {\"summary\": string (max 220 chars), \"watchlist\": [6 strings], "
+        "Reply with only the JSON object, no code fences, no comments, no trailing commas: {\"summary\": string (max 220 chars), \"watchlist\": [6 strings], "
         "\"meals\": {\"breakfast\": [...], \"mid\": [...], \"lunch\": [...], \"eve\": [...], \"dinner\": [...], \"prebed\": [...]}}"
     )
 
 
-def ask_anthropic(prompt, image_b64=None):
+def ask_anthropic(prompt, image_b64=None, model=None):
     try:
         import anthropic
     except ImportError:
@@ -219,7 +224,7 @@ def ask_anthropic(prompt, image_b64=None):
         {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": image_b64}},
         {"type": "text", "text": prompt}]
     try:
-        msg = client.messages.create(model=AI_MODEL, max_tokens=2000 if image_b64 else 8000,
+        msg = client.messages.create(model=model or AI_MODEL, max_tokens=2000 if image_b64 else 8000,
                                      messages=[{"role": "user", "content": content}])
     except Exception as e:
         return None, f"AI request failed: {type(e).__name__}"
@@ -228,28 +233,35 @@ def ask_anthropic(prompt, image_b64=None):
     return "".join(b.text for b in msg.content if getattr(b, "type", "") == "text"), None
 
 
-def ask_openai_compat(prompt, image_b64=None):
+def ask_openai_compat(prompt, image_b64=None, model=None):
     """POST {AI_BASE_URL}/chat/completions with a bearer key. Never logs the key, the prompt or the image."""
     u = urlparse(AI_BASE_URL)
     if u.scheme != "https" and u.hostname not in ("127.0.0.1", "localhost"):
         return None, "AI_BASE_URL must start with https://"
-    if not (AI_API_KEY and COMPAT_MODEL):
+    model = model or COMPAT_MODEL
+    if not (AI_API_KEY and model):
         return None, "AI_API_KEY and AI_MODEL must both be set"
     content = prompt if not image_b64 else [
         {"type": "text", "text": prompt},
         {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + image_b64}}]
+    with _ai_lock:                                  # queue calls so the provider's per-minute cap is not hit
+        wait = _ai_last[0] + AI_MIN_GAP - time.time()
+        if wait > 0:
+            time.sleep(wait)
+        _ai_last[0] = time.time()
     req = urllib.request.Request(
         AI_BASE_URL + "/chat/completions", method="POST",
-        data=json.dumps({"model": COMPAT_MODEL,
-                         "max_tokens": 2000 if image_b64 else 6000,
+        data=json.dumps({"model": model,
+                         "max_tokens": 3000 if image_b64 else 8000,   # "thinking" models spend part of this before they write
                          "messages": [{"role": "user", "content": content}]}).encode(),
         # Some gateways refuse Python's default client name outright (HTTP 403), so name ourselves.
         headers={"Authorization": "Bearer " + AI_API_KEY, "Content-Type": "application/json", "User-Agent": "LazyFitness/1.0"})
     try:
         with urllib.request.urlopen(req, timeout=110) as r:
-            return json.loads(r.read())["choices"][0]["message"]["content"], None
+            return json.loads(r.read())["choices"][0]["message"]["content"] or "", None
     except urllib.error.HTTPError as e:
-        return None, f"AI provider returned HTTP {e.code}"
+        why = {429: "AI provider is busy", 402: "AI provider balance is empty"}
+        return None, why.get(e.code, f"AI provider returned HTTP {e.code}")
     except Exception as e:
         return None, f"AI request failed: {type(e).__name__}"
 
@@ -259,26 +271,39 @@ def parse_json_reply(text):
     m = re.search(r"\{.*\}", text, re.S)
     if not m:
         return None, "AI reply had no JSON"
-    try:
-        return json.loads(m.group(0)), None
-    except json.JSONDecodeError:
-        return None, "AI reply was not valid JSON"
+    for raw in (m.group(0), re.sub(r",\s*([}\]])", r"\1", m.group(0))):    # models sometimes leave a trailing comma
+        try:
+            return json.loads(raw), None
+        except json.JSONDecodeError:
+            pass
+    return None, "AI reply was not valid JSON"
 
 
-def ai_plan(profile):
-    slots = SLOTS
-    prompt = build_prompt(profile)
-    text, err = ask_openai_compat(prompt) if AI_BASE_URL else ask_anthropic(prompt)
-    if text is None:
-        return None, err
-    data, err = parse_json_reply(text)
-    if data is None:
-        return None, err
-    meals = data.get("meals", {})
+def ask_json(prompt, image_b64=None, models=(), convert=lambda d: (d, None)):
+    """Ask until one reply parses as JSON. Tries each model in turn, and a lone model gets a second go because replies vary.
+    Gives up at once when the provider is busy or out of balance, since another model on the same account would fail too."""
+    models = list(models) if len(models) > 1 else list(models or [None]) * 2
+    err = "AI is not configured"
+    for model in models:
+        text, err = (ask_openai_compat if AI_BASE_URL else ask_anthropic)(prompt, image_b64, model)
+        if text is not None:
+            data, err = parse_json_reply(text)
+            if data is not None:
+                result, err = convert(data)      # a reply that parses but has the wrong shape counts as a failure
+                if result is not None:
+                    return result, None
+        if err and ("busy" in err or "balance" in err):
+            break
+    return None, err
+
+
+def plan_from_reply(data):
+    """Keep only well-formed meals. A plan must have options for every slot, otherwise it counts as a failed try."""
+    meals = data.get("meals", {}) if isinstance(data, dict) else {}
     out = {}
-    for k in slots:
+    for k in SLOTS:
         opts = []
-        for o in meals.get(k, []):
+        for o in meals.get(k, []) if isinstance(meals.get(k), list) else []:
             if isinstance(o, dict) and isinstance(o.get("name"), str) and isinstance(o.get("items"), list):
                 opts.append({
                     "name": o["name"][:80],
@@ -287,13 +312,17 @@ def ai_plan(profile):
                 })
         if opts:
             out[k] = opts
-    if not out:
-        return None, "AI reply had no usable meals"
+    if len(out) < len(SLOTS):
+        return None, "AI reply was missing some meals"
     return {
         "summary": str(data.get("summary", ""))[:240],
         "watchlist": [str(w)[:90] for w in data.get("watchlist", [])][:8],
         "meals": out,
     }, None
+
+
+def ai_plan(profile):
+    return ask_json(build_prompt(profile), None, [COMPAT_MODEL if AI_BASE_URL else AI_MODEL, *FALLBACK_MODELS], plan_from_reply)
 
 
 MEAL_PROMPT = (
@@ -309,11 +338,7 @@ MEAL_PROMPT = (
 
 def read_meal(image_b64):
     """Ask the AI provider what is in a meal photo. Returns ({items, kcal?, note}, None) or (None, reason)."""
-    ask = ask_openai_compat if AI_BASE_URL else ask_anthropic
-    text, err = ask(MEAL_PROMPT, image_b64)
-    if text is None:
-        return None, err
-    data, err = parse_json_reply(text)
+    data, err = ask_json(MEAL_PROMPT, image_b64, [VISION_MODEL or (COMPAT_MODEL if AI_BASE_URL else AI_MODEL)])
     if data is None:
         return None, err
     items = [plain(i, 90) for i in data.get("items", []) if str(i).strip()][:8]
@@ -548,6 +573,12 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, {"ok": True})
         return self._send(401 if m else 404, {"error": "unauthorized" if m else "not found"})
 
+    def _ai_failed(self, err):
+        """429 ai_busy when the provider says slow down, otherwise 503 ai_unavailable. The app falls back either way."""
+        sys.stderr.write(f"AI call failed: {err}\n")
+        busy = "busy" in (err or "")
+        return self._send(429 if busy else 503, {"error": "ai_busy" if busy else "ai_unavailable", "detail": err})
+
     def _meal_photo(self, c):
         """Read what is in a meal photo. The image is checked, sent to the AI provider and then dropped, never stored."""
         u = self._user()
@@ -567,7 +598,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(429, {"error": "ai_limit", "detail": "daily photo limit reached"})
         result, err = read_meal(img)
         if result is None:
-            return self._send(503, {"error": "ai_unavailable", "detail": err})
+            return self._ai_failed(err)
         return self._send(200, result)
 
     def do_POST(self):
@@ -637,7 +668,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(429, {"error": "ai_limit", "detail": "daily AI plan limit reached"})
                 plan, err = ai_plan(slim)
                 if plan is None:
-                    return self._send(503, {"error": "ai_unavailable", "detail": err})
+                    return self._ai_failed(err)
                 return self._send(200, plan)
             return self._send(404, {"error": "not found"})
         except ValueError as e:
