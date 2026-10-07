@@ -11,7 +11,21 @@ import kotlin.math.roundToInt
  * [status]: "skipped" (not eaten or done, [text] holds the reason), "replaced" (something else was eaten or done, [text] says what),
  * or "note" (a change request, nothing else changed). [note] is a free-text request for the coach on any of them.
  */
-data class Entry(val status: String, val text: String = "", val kcal: Int? = null, val note: String = "")
+data class Entry(val status: String, val text: String = "", val kcal: Int? = null, val note: String = "", val tip: String = "")
+
+/**
+ * What the AI changed on one step for one day. A meal can change [name], [eat], [skip] and [kcal];
+ * a workout [title], [name] (the duration), [exercises] and [note]. Fields left null stay as planned. [why] is shown on the card.
+ */
+data class Revision(
+    val title: String? = null, val name: String? = null, val eat: List<String>? = null, val skip: List<String>? = null,
+    val kcal: Int? = null, val exercises: List<Pair<String, String>>? = null, val note: String? = null, val why: String = "",
+)
+
+fun Step.revised(r: Revision?): Step = if (r == null) this else copy(
+    title = r.title ?: title, name = r.name ?: name, eat = r.eat ?: eat, skip = r.skip ?: skip,
+    kcal = r.kcal ?: kcal, exercises = r.exercises ?: exercises, note = r.note ?: note,
+)
 
 data class Week(val daysLogged: Int, val avgPct: Int, val skipped: Int, val replaced: Int, val mostSkipped: String?)
 
@@ -96,7 +110,8 @@ class Store(ctx: Context) {
         val day = entryLog().optJSONObject(date.toString()) ?: return emptyMap()
         return day.keys().asSequence().associateWith { id ->
             val o = day.getJSONObject(id)
-            Entry(o.optString("s", "note"), o.optString("text", ""), if (o.has("kcal")) o.getInt("kcal") else null, o.optString("note", ""))
+            Entry(o.optString("s", "note"), o.optString("text", ""), if (o.has("kcal")) o.getInt("kcal") else null,
+                o.optString("note", ""), o.optString("tip", ""))
         }
     }
 
@@ -106,6 +121,30 @@ class Store(ctx: Context) {
         if (e == null) day.remove(id) else day.put(id, entryTo(e))
         all.put(date.toString(), day)
         sp.edit().putString("entries", all.toString()).apply()
+    }
+
+    // ---- AI rewrites of single steps: { "2026-10-07": { "lunch": { "name": "...", "eat": [...], "why": "..." } } } ----
+    private fun revisionLog(): JSONObject =
+        runCatching { JSONObject(sp.getString("revisions", "{}")!!) }.getOrDefault(JSONObject())
+
+    fun revisions(date: LocalDate): Map<String, Revision> {
+        val day = revisionLog().optJSONObject(date.toString()) ?: return emptyMap()
+        return day.keys().asSequence().mapNotNull { id -> runCatching { id to revisionFrom(day.getJSONObject(id)) }.getOrNull() }.toMap()
+    }
+
+    fun setRevision(date: LocalDate, id: String, r: Revision?) {
+        val all = revisionLog()
+        val day = all.optJSONObject(date.toString()) ?: JSONObject()
+        if (r == null) day.remove(id) else day.put(id, revisionTo(r))
+        all.put(date.toString(), day)
+        sp.edit().putString("revisions", all.toString()).apply()
+    }
+
+    /** The day's timeline as the person sees it: the plan, with meal swaps and any AI rewrites applied. */
+    fun daySteps(date: LocalDate): List<Step> {
+        val p = profile ?: return emptyList()
+        val revs = revisions(date)
+        return PlanEngine.dayPlan(p, plan ?: PlanEngine.localPlan(p), date) { slot -> swaps(date, slot) }.map { it.revised(revs[it.id]) }
     }
 
     // ---- water glasses (250 ml each) ----
@@ -129,15 +168,36 @@ class Store(ctx: Context) {
 
     // ---- meal swaps ----
     fun swaps(date: LocalDate, slot: String): Int = sp.getInt("swap_${date}_$slot", 0)
-    fun bumpSwap(date: LocalDate, slot: String) =
+    fun bumpSwap(date: LocalDate, slot: String) {
         sp.edit().putInt("swap_${date}_$slot", swaps(date, slot) + 1).apply()
+        setRevision(date, slot, null)          // a rewrite belonged to the meal that was just swapped out
+    }
 
     fun clearAll() = sp.edit().clear().apply()
 
     // ---- JSON ----
     companion object {
-        fun entryTo(e: Entry) = JSONObject().put("s", e.status).put("text", e.text).put("note", e.note)
+        fun entryTo(e: Entry) = JSONObject().put("s", e.status).put("text", e.text).put("note", e.note).put("tip", e.tip)
             .apply { e.kcal?.let { put("kcal", it) } }
+
+        fun revisionTo(r: Revision) = JSONObject().apply {
+            r.title?.let { put("title", it) }; r.name?.let { put("name", it) }
+            r.eat?.let { put("eat", JSONArray(it)) }; r.skip?.let { put("skip", JSONArray(it)) }
+            r.kcal?.let { put("kcal", it) }
+            r.exercises?.let { ex -> put("exercises", JSONArray(ex.map { JSONArray(listOf(it.first, it.second)) })) }
+            r.note?.let { put("note", it) }
+            put("why", r.why)
+        }
+
+        fun revisionFrom(o: JSONObject) = Revision(
+            title = o.optString("title").ifEmpty { null }, name = o.optString("name").ifEmpty { null },
+            eat = o.optJSONArray("eat")?.let { strings(it) }, skip = o.optJSONArray("skip")?.let { strings(it) },
+            kcal = if (o.has("kcal")) o.getInt("kcal") else null,
+            exercises = o.optJSONArray("exercises")?.let { a ->
+                (0 until a.length()).map { val pair = a.getJSONArray(it); pair.getString(0) to pair.getString(1) }
+            },
+            note = o.optString("note").ifEmpty { null }, why = o.optString("why", ""),
+        )
 
         fun profileTo(p: Profile) = JSONObject().apply {
             put("username", p.username); put("age", p.age); put("sex", p.sex)

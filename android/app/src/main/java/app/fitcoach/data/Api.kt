@@ -104,6 +104,45 @@ object Api {
         call("DELETE", "/api/me", null, store).code in listOf(200, 401)
     }.getOrDefault(false)
 
+    class StepAi(val revision: Revision?, val kcal: Int?, val tip: String, val error: String? = null)
+
+    private fun stepJson(s: Step) = JSONObject().put("id", s.id).put("kind", s.kind).put("title", s.title)
+        .put("name", s.name ?: "").put("eat", JSONArray(s.eat)).put("skip", JSONArray(s.skip))
+        .put("exercises", JSONArray(s.exercises.map { JSONArray(listOf(it.first, it.second)) }))
+        .apply { s.kcal?.let { put("kcal", it) } }
+
+    /**
+     * Asks the AI about one step. [mode]: "change" rewrites [step] to match [request]; "skipped" and "replaced" (where [request] is
+     * what was eaten instead) return a tip, the calories of what was eaten, and optionally a rewrite of the [next] meal.
+     * [StepAi.error] says why nothing came back, in words for the person.
+     */
+    fun stepAi(store: Store, mode: String, step: Step, request: String, next: Step?, eatenKcal: Int, targetKcal: Int): StepAi {
+        fun fail(msg: String) = StepAi(null, null, "", msg)
+        val p = store.profile ?: return fail("Set up your profile first.")
+        if (!store.consent || store.userId == null) return fail("Turn on sharing under Me, Edit profile, so the AI can help.")
+        return runCatching {
+            val t = PlanEngine.targets(p)
+            val body = JSONObject().put("mode", mode).put("request", request).put("step", stepJson(step))
+                .put("day", JSONObject().put("eaten_kcal", eatenKcal).put("target_kcal", targetKcal))
+                .put("profile", Store.profileTo(p).apply { remove("username") }
+                    .put("targets", JSONObject().put("kcal", t.kcal).put("protein", t.protein)))
+                .apply { next?.let { put("next", stepJson(it)) } }
+            val r = call("POST", "/api/step-ai", body, store, timeoutMs = 150000)
+            when (r.code) {
+                200 -> {
+                    val j = JSONObject(r.body)
+                    StepAi(j.optJSONObject("revision")?.let { Store.revisionFrom(it) }, if (j.has("kcal")) j.getInt("kcal") else null, j.optString("tip", ""))
+                }
+                429 -> fail(
+                    if (r.body.contains("ai_busy")) "The AI is busy right now. Try again in a minute."
+                    else "You have used today's AI updates. Try again tomorrow."
+                )
+                503 -> fail("The AI could not do that right now. Try again in a minute.")
+                else -> fail(runCatching { JSONObject(r.body).getString("error") }.getOrDefault("The AI could not do that."))
+            }
+        }.getOrElse { fail("Could not reach the server.") }
+    }
+
     /** Asks the backend (which holds the AI key) for a personalised plan. Null means use the offline planner. */
     fun aiPlan(store: Store, p: Profile): Plan? = runCatching {
         if (!store.consent || store.userId == null) return null

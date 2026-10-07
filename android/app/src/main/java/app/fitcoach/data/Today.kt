@@ -9,6 +9,7 @@ data class DayView(
     val steps: List<Step>,
     val done: Set<String>,
     val entries: Map<String, Entry>,
+    val revisions: Map<String, Revision>,
     val next: Step?,
     val nowMin: Int,
 )
@@ -17,15 +18,14 @@ object Today {
     /** Builds today's timeline from the saved profile and plan. Null until onboarding is finished. */
     fun load(store: Store, now: LocalDateTime = LocalDateTime.now()): DayView? {
         val p = store.profile ?: return null
-        val plan = store.plan ?: PlanEngine.localPlan(p)
         val date = PlanEngine.activeDate(p, now)
-        val steps = PlanEngine.dayPlan(p, plan, date) { slot -> store.swaps(date, slot) }
+        val steps = store.daySteps(date)
         val done = store.done(date)
         val entries = store.entries(date)
         val nowMin = Duration.between(date.atStartOfDay(), now).toMinutes().toInt()
         val pending = steps.filter { it.id !in done && entries[it.id]?.status != "skipped" }
         val next = pending.firstOrNull { it.timeMin >= nowMin - 90 } ?: pending.firstOrNull()
-        return DayView(date, steps, done, entries, next, nowMin)
+        return DayView(date, steps, done, entries, store.revisions(date), next, nowMin)
     }
 
     /** One-line summary used by the widget and notifications. */
