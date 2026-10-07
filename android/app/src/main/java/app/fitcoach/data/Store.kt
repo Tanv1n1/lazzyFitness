@@ -4,6 +4,16 @@ import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
 import java.time.LocalDate
+import kotlin.math.roundToInt
+
+/**
+ * What happened to a step besides ticking it.
+ * [status]: "skipped" (not eaten or done, [text] holds the reason), "replaced" (something else was eaten or done, [text] says what),
+ * or "note" (a change request, nothing else changed). [note] is a free-text request for the coach on any of them.
+ */
+data class Entry(val status: String, val text: String = "", val kcal: Int? = null, val note: String = "")
+
+data class Week(val daysLogged: Int, val avgPct: Int, val skipped: Int, val replaced: Int, val mostSkipped: String?)
 
 /** Everything the app remembers lives in one SharedPreferences file on the phone. */
 class Store(ctx: Context) {
@@ -78,6 +88,45 @@ class Store(ctx: Context) {
         return n
     }
 
+    // ---- what happened to a step besides ticking it: { "2026-10-07": { "lunch": {"s":"replaced","text":"..."} } } ----
+    private fun entryLog(): JSONObject =
+        runCatching { JSONObject(sp.getString("entries", "{}")!!) }.getOrDefault(JSONObject())
+
+    fun entries(date: LocalDate): Map<String, Entry> {
+        val day = entryLog().optJSONObject(date.toString()) ?: return emptyMap()
+        return day.keys().asSequence().associateWith { id ->
+            val o = day.getJSONObject(id)
+            Entry(o.optString("s", "note"), o.optString("text", ""), if (o.has("kcal")) o.getInt("kcal") else null, o.optString("note", ""))
+        }
+    }
+
+    fun setEntry(date: LocalDate, id: String, e: Entry?) {
+        val all = entryLog()
+        val day = all.optJSONObject(date.toString()) ?: JSONObject()
+        if (e == null) day.remove(id) else day.put(id, entryTo(e))
+        all.put(date.toString(), day)
+        sp.edit().putString("entries", all.toString()).apply()
+    }
+
+    // ---- water glasses (250 ml each) ----
+    fun water(date: LocalDate): Int = sp.getInt("water_$date", 0)
+    fun setWater(date: LocalDate, glasses: Int) = sp.edit().putInt("water_$date", glasses.coerceIn(0, 40)).apply()
+
+    /** The last 7 days (including [today]) in numbers, for the Me tab. */
+    fun week(today: LocalDate): Week {
+        val counts = doneCounts()
+        val days = (0..6).map { today.minusDays(it.toLong()) }
+        val total = days.sumOf { counts[it] ?: 0 }
+        val skipped = days.flatMap { d -> entries(d).filter { it.value.status == "skipped" }.keys }
+        return Week(
+            daysLogged = days.count { (counts[it] ?: 0) > 0 },
+            avgPct = (100.0 * total / (7 * STEP_IDS.size)).roundToInt(),
+            skipped = skipped.size,
+            replaced = days.sumOf { d -> entries(d).count { it.value.status == "replaced" } },
+            mostSkipped = skipped.groupingBy { it }.eachCount().maxByOrNull { it.value }?.key,
+        )
+    }
+
     // ---- meal swaps ----
     fun swaps(date: LocalDate, slot: String): Int = sp.getInt("swap_${date}_$slot", 0)
     fun bumpSwap(date: LocalDate, slot: String) =
@@ -87,6 +136,9 @@ class Store(ctx: Context) {
 
     // ---- JSON ----
     companion object {
+        fun entryTo(e: Entry) = JSONObject().put("s", e.status).put("text", e.text).put("note", e.note)
+            .apply { e.kcal?.let { put("kcal", it) } }
+
         fun profileTo(p: Profile) = JSONObject().apply {
             put("username", p.username); put("age", p.age); put("sex", p.sex)
             put("height_cm", p.heightCm); put("weight_kg", p.weightKg); put("goal", p.goal)

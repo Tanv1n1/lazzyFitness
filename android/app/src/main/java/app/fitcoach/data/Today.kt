@@ -8,6 +8,7 @@ data class DayView(
     val date: LocalDate,
     val steps: List<Step>,
     val done: Set<String>,
+    val entries: Map<String, Entry>,
     val next: Step?,
     val nowMin: Int,
 )
@@ -20,10 +21,11 @@ object Today {
         val date = PlanEngine.activeDate(p, now)
         val steps = PlanEngine.dayPlan(p, plan, date) { slot -> store.swaps(date, slot) }
         val done = store.done(date)
+        val entries = store.entries(date)
         val nowMin = Duration.between(date.atStartOfDay(), now).toMinutes().toInt()
-        val pending = steps.filter { it.id !in done }
+        val pending = steps.filter { it.id !in done && entries[it.id]?.status != "skipped" }
         val next = pending.firstOrNull { it.timeMin >= nowMin - 90 } ?: pending.firstOrNull()
-        return DayView(date, steps, done, next, nowMin)
+        return DayView(date, steps, done, entries, next, nowMin)
     }
 
     /** One-line summary used by the widget and notifications. */

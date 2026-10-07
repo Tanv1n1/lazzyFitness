@@ -204,7 +204,7 @@ function render(){
   $("#dist").innerHTML=col("Goal",s.goals,GOAL)+col("Diet",s.diets,DIET)+col("Training",s.places,{home:"Home",gym:"Gym"})+col("Medical flags",s.conditions,COND);
   head();rows();
 }
-const COLS=[["username","User",0],["goal","Goal",0],["age","Age",1],["weight_kg","Weight",1],["kcal","kcal",1],["today_done","Today",1],["comp7","7-day",1],["streak","Streak",1],["last_log","Last log",0],["conds","Flags",0]];
+const COLS=[["username","User",0],["goal","Goal",0],["age","Age",1],["weight_kg","Weight",1],["kcal","kcal",1],["today_done","Today",1],["comp7","7-day",1],["streak","Streak",1],["skipped7","Skips 7d",1],["requests7","Asks 7d",1],["last_log","Last log",0],["conds","Flags",0]];
 function head(){
   $("#thead").innerHTML=COLS.map(([k,l,n])=>`<th data-k="${k}" class="${n?"num ":""}${sort.k===k?"sorted"+(sort.asc?" asc":""):""}">${l}</th>`).join("");
   document.querySelectorAll("#thead th").forEach(th=>th.onclick=()=>{const k=th.dataset.k;sort=sort.k===k?{k,asc:!sort.asc}:{k,asc:k==="username"};head();rows()});
@@ -223,6 +223,8 @@ function rows(){
     <td class="num">${u.today_done}/9</td>
     <td class="num"><span class="mini"><i style="width:${u.comp7}%"></i></span>${u.comp7}%</td>
     <td class="num">${u.streak}</td>
+    <td class="num">${u.skipped7||0}</td>
+    <td class="num">${u.requests7?`<span class="pill warn">${u.requests7}</span>`:0}</td>
     <td>${risk(u)?'<span class="pill bad">'+ago(u.last_log)+"</span>":ago(u.last_log)}</td>
     <td>${u.conds.map(c=>`<span class="pill warn">${esc(COND[c]||c)}</span>`).join("")||'<span style="color:var(--muted)">None</span>'}</td></tr>`).join("");
   document.querySelectorAll("#rows tr").forEach(r=>{r.onclick=()=>openUser(r.dataset.id);r.onkeydown=e=>{if(e.key==="Enter")openUser(r.dataset.id)}});
@@ -239,10 +241,16 @@ async function openUser(id){
   const cell=day=>{const n=logs[day]?logs[day].done_count:null;const c=n==null?"":n>=8?"l3":n>=6?"l2":"l1";return `<i class="${c}" title="${mdy(day)}: ${n==null?"no log":n+" of 9"}"></i>`};
   const missed={};d.logs.forEach(l=>Object.keys(STEP).forEach(s=>{if(!l.done.includes(s))missed[s]=(missed[s]||0)+1}));
   const topMiss=Object.entries(missed).sort((a,b)=>b[1]-a[1]).slice(0,3);
+  const changes=[];d.logs.slice().reverse().forEach(l=>Object.entries(l.entries||{}).forEach(([sid,e])=>changes.push({day:l.day,sid,e})));
+  const changeHtml=changes.slice(0,14).map(({day,sid,e})=>{
+    const what=e.s==="skipped"?"Skipped"+(e.text?" ("+esc(e.text)+")":""):e.s==="replaced"?"Had instead: "+esc(e.text)+(e.kcal?" (~"+e.kcal+" kcal)":""):"Change request";
+    return `<dt>${mdy(day)}<br>${STEP[sid]||esc(sid)}</dt><dd>${what}${e.note?`<br><b>Request:</b> ${esc(e.note)}`:""}</dd>`}).join("");
+  const waterToday=(logs[SUM.today]||{}).water;
   $("#drawer").innerHTML=`<div style="display:flex;justify-content:space-between;align-items:start;gap:12px"><div><h2 style="font-size:22px">${esc(u.username)}</h2><div style="color:var(--muted)">${u.age} yrs, ${esc(u.sex)}, ${u.height_cm} cm, ${u.weight_kg} kg</div></div><button class="btn" id="x">Close</button></div>
-  <dl class="kv"><dt>Goal</dt><dd>${GOAL[u.goal]}</dd><dt>Daily target</dt><dd class="mono">${u.kcal||"-"} kcal, ${u.protein||"-"} g protein</dd><dt>Diet</dt><dd>${DIET[u.diet]}</dd><dt>Training</dt><dd>${u.place==="gym"?"Gym":"Home"}, ${u.wtime}</dd><dt>Wake / sleep</dt><dd class="mono">${esc(u.wake)} / ${esc(u.sleep)}</dd><dt>Medical flags</dt><dd>${u.conds.map(c=>`<span class="pill warn">${esc(COND[c]||c)}</span>`).join("")||"None"}</dd><dt>Plan built by</dt><dd>${u.plan_source==="ai"?"Claude (AI)":"Offline planner"}</dd><dt>Joined</dt><dd>${mdy(u.created_at.slice(0,10))}</dd><dt>Streak</dt><dd class="mono">${u.streak} days</dd></dl>
+  <dl class="kv"><dt>Goal</dt><dd>${GOAL[u.goal]}</dd><dt>Daily target</dt><dd class="mono">${u.kcal||"-"} kcal, ${u.protein||"-"} g protein</dd><dt>Diet</dt><dd>${DIET[u.diet]}</dd><dt>Training</dt><dd>${u.place==="gym"?"Gym":"Home"}, ${u.wtime}</dd><dt>Wake / sleep</dt><dd class="mono">${esc(u.wake)} / ${esc(u.sleep)}</dd><dt>Medical flags</dt><dd>${u.conds.map(c=>`<span class="pill warn">${esc(COND[c]||c)}</span>`).join("")||"None"}</dd><dt>Plan built by</dt><dd>${u.plan_source==="ai"?"AI service":"Offline planner"}</dd><dt>Water today</dt><dd class="mono">${waterToday==null?"no log":waterToday+" glasses"}</dd><dt>Joined</dt><dd>${mdy(u.created_at.slice(0,10))}</dd><dt>Streak</dt><dd class="mono">${u.streak} days</dd></dl>
   <h2>Last 30 days</h2><div class="heat">${days.map(cell).join("")}</div><div class="legend">Darker means more of the 9 steps done. Blank means no log.</div>
-  <h2 style="margin-top:18px">Most missed steps</h2><dl class="kv">${topMiss.map(([s,n])=>`<dt>${STEP[s]}</dt><dd class="mono">skipped on ${n} of ${d.logs.length} logged days</dd>`).join("")||'<dt>None</dt><dd>No logs yet</dd>'}</dl>
+  <h2 style="margin-top:18px">Most often not done</h2><dl class="kv">${topMiss.map(([s,n])=>`<dt>${STEP[s]}</dt><dd class="mono">not done on ${n} of ${d.logs.length} logged days</dd>`).join("")||'<dt>None</dt><dd>No logs yet</dd>'}</dl>
+  <h2 style="margin-top:18px">Skips, swaps and requests</h2><dl class="kv">${changeHtml||'<dt>None</dt><dd>Nothing skipped, swapped or asked for yet</dd>'}</dl>
   <div style="margin-top:24px;border-top:1px solid var(--line);padding-top:16px"><button class="btn danger" id="del">Delete this user and their logs</button><div id="confirm" hidden style="margin-top:10px">This cannot be undone. <button class="btn danger" id="yes">Yes, delete</button> <button class="btn" id="no">Cancel</button></div></div>`;
   $("#drawer").classList.add("open");$("#scrim").classList.add("on");
   $("#x").onclick=closeDrawer;$("#del").onclick=()=>{$("#confirm").hidden=false};$("#no").onclick=()=>{$("#confirm").hidden=true};

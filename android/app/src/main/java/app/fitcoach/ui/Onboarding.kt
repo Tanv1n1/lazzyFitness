@@ -167,8 +167,12 @@ fun Onboarding(initial: Profile?, hadConsent: Boolean, initialServer: String, in
                         Column(Modifier.padding(top = 12.dp)) {
                             Text("Share my profile and daily check-ins with my coach dashboard", fontWeight = FontWeight.Medium)
                             Text("Your username, body stats, goal, medical flags and ticks are sent to the Lazy Fitness server. " +
-                                "Free-text notes stay on your phone. Leave this off and everything stays on your phone, " +
-                                "with the offline planner. You can delete your data any time from the Me tab.",
+                                "To write your meal plan, the server also sends your age, sex, height, weight, goal, diet, medical flags " +
+                                "and any note you typed, but never your username, to a third-party AI service. " +
+                                "A meal photo you choose to analyse goes to the same service and is not saved. " +
+                                "Skipped steps, what you ate instead and your change requests are shared with your coach. " +
+                                "Leave this off and everything stays on your phone, with the offline planner. " +
+                                "You can delete your data from the Me tab, but not what the AI service has already received.",
                                 fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }

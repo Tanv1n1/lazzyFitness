@@ -12,9 +12,9 @@ Pune-focused diet and workout app.
 
 | Piece | State |
 |---|---|
-| Backend and admin site | Tested: `python3 backend/selftest.py` runs 5 users at once (16 checks). Dashboard checked in a browser |
+| Backend and admin site | Tested: `python3 backend/selftest.py` runs 5 users at once (35 checks, including skip and swap sync, water, the AI plan path and meal photo reading against a fake provider). Dashboard checked in a browser |
 | Claude plan endpoint (`/api/plan`) | Written, not tested against the live API (no key was available) |
-| Android app | Builds from the command line (Gradle 8.13, AGP 8.13.2) after the cleanup. **Not yet run on a phone or emulator**: onboarding, timeline, reminders and the widget are untested at runtime |
+| Android app | Builds from the command line (Gradle 8.13, AGP 8.13.2). **Not yet run on a phone or emulator**: onboarding, timeline, skip and swap dialogs, photo reading, reminders and the widget are untested at runtime |
 | `deploy/gcp/setup.sh` | Syntax-checked only. Not run on a real VM |
 
 ## Run the backend
@@ -27,16 +27,31 @@ python3 server.py      # or plain: http://localhost:8080/admin
 
 The admin token comes from `ADMIN_TOKEN`, or is generated once into `backend/.admin_token`.
 
-Optional Claude-built plans (the key stays on the server, never in the app):
+Optional AI-written plans. The key stays on the server, never in the app. Only age, sex, height, weight, goal, diet,
+medical flags, targets and a short free-text note go to the provider. The username never does. Pick one provider:
 
 ```bash
+# Anthropic
 pip install anthropic
 export ANTHROPIC_API_KEY=...       # or run `ant auth login`
+
+# or any OpenAI-compatible provider (chat/completions with a bearer key)
+export AI_BASE_URL=https://api.example.com/v1     # must be https
+export AI_API_KEY=...
+export AI_MODEL=the-model-id-as-that-provider-names-it
 ```
 
-Without it the app uses its offline planner. Limits for a small test: `INVITE_CODE`, `MAX_USERS`
-(10 in `run_test.sh`), `AI_DAILY_LIMIT` (3 plans per user per day), `AI_ENABLED=0`, admin lockout after 20 wrong tokens.
-A Claude plan is one API call, roughly a few cents (an estimate, not measured). `FITCOACH_MODEL=claude-haiku-4-5` is cheaper.
+Without either, the app uses its offline planner. The consent text in the app names a third-party AI service, so only
+enable a provider you are willing to name to your users.
+
+Meal photo reading needs a model that accepts images, so `AI_MODEL` must be one that can see them.
+
+Limits for a small test: `INVITE_CODE`, `MAX_USERS` (10 in `run_test.sh`), `AI_DAILY_LIMIT` (3 plans per user per day),
+`AI_PHOTO_DAILY_LIMIT` (10 photo reads per user per day), `AI_ENABLED=0`, admin lockout after 20 wrong tokens.
+Cost depends on the provider. With Anthropic, a plan or a photo read is one API call.
+
+Reminders are scheduled on the phone, so they work without a server or Firebase. Server-sent push (for example a coach
+message to a user) would need Firebase Cloud Messaging and is not included.
 
 ## Build the Android app
 
@@ -48,6 +63,9 @@ A Claude plan is one API call, roughly a few cents (an estimate, not measured). 
 
 - **Timeline** starts at wake time with 400 ml water. Workout, meals and sleep are spaced across the person's own wake and sleep times. Each meal lists foods to eat and to skip.
 - **Reminders**: one alarm is armed for the next undone step. It shows the meal, what to eat, what to skip and a Done button, then arms the next one. Reboot, app update and clock changes re-arm it.
+- **Skip, swap, ask**: on any step you can mark it skipped (with a reason), say what you had instead, or write a change request for your coach. For meals you can also choose or take a photo, and an AI vision model lists the food and estimates calories. You check and edit the result before saving. The photo is not stored, on the phone or the server.
+- **Water**: a glass counter on the Today screen and four water reminders between breakfast and dinner, each with a "Drank a glass" button. Reminders stop once the day's target is reached.
+- **Last 7 days** card on the Me tab: check-in days, average completion, skips, swaps and the step skipped most.
 - **Widget**: progress, streak, next step and a Done button.
 - **Sync**: only after the user ticks the consent box. Profile, targets, medical flags and daily ticks go to the server; free-text notes stay on the phone. Users delete their data from the Me tab (`DELETE /api/me`).
 - **Admin site**: users, daily active, 7-day completion, streaks, who has gone quiet, which steps get skipped, goal / diet / medical-flag mix, per-user 30-day history. Admin can delete a user.

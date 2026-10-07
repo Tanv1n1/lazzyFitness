@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Starts a throwaway server and checks it with 5 users at the same time. Run: python3 selftest.py"""
+import base64
 import json
 import os
 import random
@@ -9,10 +10,12 @@ import tempfile
 import threading
 import time
 import urllib.error
+from http.server import BaseHTTPRequestHandler, HTTPServer
 import urllib.request
 from datetime import date, timedelta
 
 PORT = 8123
+FAKE_PORT = 8124
 BASE = f"http://127.0.0.1:{PORT}"
 ADMIN = "selftest-admin-token"
 INVITE = "pune-test-5"
@@ -37,6 +40,29 @@ def profile(i, **kw):
          "sleep": "23:00", "conds": [["diabetes"], [], ["thyroid", "acidity"], [], ["bp"]][i % 5], "kcal": 1900, "protein": 100}
     p.update(kw)
     return p
+
+
+FAKE_MEAL = {"name": "Test meal", "items": ["1 bhakri", "1 bowl dal", "salad"], "skip": ["vada pav", "sweets"]}
+FAKE_REPLY = {"summary": "Fake plan", "watchlist": ["a", "b"],
+              "meals": {k: [FAKE_MEAL] for k in ("breakfast", "mid", "lunch", "eve", "dinner", "prebed")}}
+FAKE_MEAL_READING = {"items": ["2 bhakri, ~220 kcal", "dal, 1 bowl, ~150 kcal"], "kcal": 370,
+                     "confidence": "low", "note": "Portions are a guess."}
+fake_seen = []   # (path, authorization header, body text) of every call the server makes to the fake AI provider
+
+
+class FakeProvider(BaseHTTPRequestHandler):
+    def do_POST(self):
+        body = self.rfile.read(int(self.headers.get("Content-Length") or 0)).decode()
+        fake_seen.append((self.path, self.headers.get("Authorization"), body))
+        reply = FAKE_MEAL_READING if '"image_url"' in body else FAKE_REPLY
+        out = json.dumps({"choices": [{"message": {"content": "Here you go:\n" + json.dumps(reply)}}]}).encode()
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(out)))
+        self.end_headers()
+        self.wfile.write(out)
+
+    def log_message(self, *a):
+        pass
 
 
 results, lock = {}, threading.Lock()
@@ -74,7 +100,10 @@ def user_session(i):
 def main():
     tmp = tempfile.mkdtemp()
     env = {**os.environ, "FITCOACH_DB": os.path.join(tmp, "t.db"), "ADMIN_TOKEN": ADMIN, "PORT": str(PORT),
-           "INVITE_CODE": INVITE, "MAX_USERS": "5", "AI_DAILY_LIMIT": "2"}
+           "INVITE_CODE": INVITE, "MAX_USERS": "5", "AI_DAILY_LIMIT": "2", "AI_PHOTO_DAILY_LIMIT": "2",
+           "AI_BASE_URL": f"http://127.0.0.1:{FAKE_PORT}/v1", "AI_API_KEY": "test-key", "AI_MODEL": "fake-model"}
+    fake = HTTPServer(("127.0.0.1", FAKE_PORT), FakeProvider)
+    threading.Thread(target=fake.serve_forever, daemon=True).start()
     srv = subprocess.Popen([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "server.py")],
                            env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
@@ -123,6 +152,52 @@ def main():
         c, _ = req("POST", "/api/plan", {"profile": {}}, {"X-User-Id": uid0, "X-User-Key": "wrong"})
         check("plan endpoint needs a valid user", c == 401)
 
+        # AI plan through an OpenAI-compatible provider (a fake one here)
+        hdr0 = {"X-User-Id": results[0][1], "X-User-Key": results[0][4]}
+        plan_body = {"profile": {**profile(0), "targets": {"kcal": 1900, "protein": 100}, "other": "peanut allergy"}}
+        c, plan = req("POST", "/api/plan", plan_body, hdr0)
+        check("AI plan comes back through the provider", c == 200 and set(plan.get("meals", {})) == set(FAKE_REPLY["meals"]), str(plan)[:120])
+        path, auth, sent = fake_seen[0] if fake_seen else (None, None, "")
+        check("provider call uses the bearer key and chat/completions", path == "/v1/chat/completions" and auth == "Bearer test-key", f"{path} {auth}")
+        check("username never reaches the provider", "Tester0" not in sent)
+        check("health data the plan needs does reach it", "diabetes" in sent and "peanut allergy" in sent)
+        check("bad profile is refused before any provider call", req("POST", "/api/plan", {"profile": {"age": 3}}, hdr0)[0] == 400 and len(fake_seen) == 1)
+        check("second plan allowed", req("POST", "/api/plan", plan_body, hdr0)[0] == 200)
+        check("daily AI limit stops the third", req("POST", "/api/plan", plan_body, hdr0)[0] == 429)
+
+        # skipped and replaced steps, change requests and water
+        day = date.today().isoformat()
+        entries = {"lunch": {"s": "replaced", "text": "Poha and chai", "kcal": 450, "note": "less oil please"},
+                   "dinner": {"s": "skipped", "text": "Ate out"},
+                   "bogus": {"s": "skipped"}, "mid": {"s": "hacked"}}
+        c, _ = req("POST", "/api/sync", {"day": day, "done": ["lunch"], "entries": entries, "water": 5}, hdr0)
+        _, d0 = req("GET", f"/admin/api/users/{results[0][1]}", headers=A)
+        today_log = next((l for l in d0["logs"] if l["day"] == day), {})
+        check("skipped and replaced steps are stored, junk is dropped",
+              c == 200 and set(today_log.get("entries", {})) == {"lunch", "dinner"}, str(today_log.get("entries")))
+        check("water glasses are stored", today_log.get("water") == 5)
+        _, u0 = req("GET", "/admin/api/users", headers=A)
+        row0 = next(u for u in u0["users"] if u["id"] == results[0][1])
+        check("admin counts skips, swaps and requests",
+              (row0["skipped7"], row0["replaced7"], row0["requests7"]) == (1, 1, 1),
+              str({k: row0[k] for k in ("skipped7", "replaced7", "requests7")}))
+
+        # meal photo through the (fake) AI provider
+        jpeg = base64.b64encode(b"\xff\xd8\xff\xe0" + b"0" * 2000).decode()
+        seen_before = len(fake_seen)
+        c, meal = req("POST", "/api/meal-photo", {"image": jpeg}, hdr0)
+        check("meal photo is read", c == 200 and meal.get("kcal") == 370 and len(meal.get("items", [])) == 2, str(meal))
+        check("low confidence is flagged", meal.get("note", "").startswith("Low confidence"), str(meal))
+        sent_photo = fake_seen[seen_before][2] if len(fake_seen) > seen_before else ""
+        check("photo goes to the provider as an image, without the username",
+              '"image_url"' in sent_photo and "Tester0" not in sent_photo)
+        check("non-JPEG is refused", req("POST", "/api/meal-photo", {"image": base64.b64encode(b"hello world").decode()}, hdr0)[0] == 400)
+        check("bad base64 is refused", req("POST", "/api/meal-photo", {"image": "***"}, hdr0)[0] == 400)
+        check("photo endpoint needs a valid user",
+              req("POST", "/api/meal-photo", {"image": jpeg}, {"X-User-Id": results[0][1], "X-User-Key": "x"})[0] == 401)
+        check("second photo allowed", req("POST", "/api/meal-photo", {"image": jpeg}, hdr0)[0] == 200)
+        check("daily photo limit stops the third", req("POST", "/api/meal-photo", {"image": jpeg}, hdr0)[0] == 429)
+
         # a user deletes their own data, which frees a slot
         uid4, key4 = results[4][1], results[4][4]
         check("user can delete their own account", req("DELETE", "/api/me", headers={"X-User-Id": uid4, "X-User-Key": key4})[0] == 200)
@@ -133,6 +208,7 @@ def main():
         return 1 if failures else 0
     finally:
         srv.terminate()
+        fake.shutdown()
 
 
 if __name__ == "__main__":

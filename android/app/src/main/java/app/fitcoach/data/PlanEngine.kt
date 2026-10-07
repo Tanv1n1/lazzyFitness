@@ -264,6 +264,9 @@ object PlanEngine {
         "eve" to "Evening snack", "dinner" to "Dinner", "prebed" to "Before bed",
     )
 
+    /** Display names for all nine timeline steps. */
+    val STEP_NAMES = SLOT_TITLE + mapOf("water" to "Morning water", "workout" to "Workout", "sleep" to "Sleep on time")
+
     private fun condMatch(spec: String, conds: List<String>) =
         spec.isEmpty() || spec.split("|").any { it in conds }
 
@@ -385,4 +388,15 @@ object PlanEngine {
     }
 
     fun healthNotes(p: Profile): List<String> = p.conds.mapNotNull { NOTES[it] }
+
+    /** Four water reminders spread from breakfast to dinner. They are notifications and a glass counter, not timeline steps. */
+    fun waterNudges(p: Profile): List<Pair<String, Int>> {
+        val s = schedule(p)
+        val a = s.getValue("breakfast")
+        val b = s.getValue("dinner")
+        return (1..4).map { k -> "water$k" to r5(a + (b - a) * k / 5) }
+    }
+
+    /** Daily target in 250 ml glasses. */
+    fun glassTarget(t: Targets): Int = ((t.waterL * 1000) / 250).roundToInt().coerceIn(6, 16)
 }

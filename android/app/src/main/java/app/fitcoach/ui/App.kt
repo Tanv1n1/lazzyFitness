@@ -12,6 +12,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -175,6 +177,7 @@ private fun MainShell(store: Store, onEdit: () -> Unit, onRebuild: () -> Unit, o
 
 // ---------------------------------------------------------------- Today
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun TodayScreen(store: Store) {
     val ctx = LocalContext.current
@@ -182,6 +185,7 @@ private fun TodayScreen(store: Store) {
     var version by remember { mutableIntStateOf(0) }
     val view: DayView? = remember(version) { Today.load(store) }
     val expanded = remember { mutableStateMapOf<String, Boolean>() }
+    var dialog by remember { mutableStateOf<Pair<String, String>?>(null) }   // step id to dialog mode
 
     // Ask for notification permission once (Android 13+), and refresh the "up next" every minute.
     val askPerm = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
@@ -201,6 +205,18 @@ private fun TodayScreen(store: Store) {
         Notifier.markDone(ctx, view.date, s.id, !now)
         scope.launch { refreshWidgets(ctx) }
         version++
+    }
+
+    dialog?.let { (id, mode) ->
+        val step = view.steps.firstOrNull { it.id == id }
+        if (step != null) {
+            StepDialog(store, step, mode, view.entries[id], onDismiss = { dialog = null }) { entry, done ->
+                Notifier.record(ctx, view.date, id, entry, done)
+                scope.launch { refreshWidgets(ctx) }
+                dialog = null
+                version++
+            }
+        }
     }
 
     val hour = LocalDateTime.now().hour
@@ -226,6 +242,14 @@ private fun TodayScreen(store: Store) {
                 )
                 Text("Target ${t.kcal} kcal  ·  ${t.protein} g protein  ·  ${t.waterL} L water",
                     fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
+                val glasses = PlanEngine.glassTarget(t)
+                val water = store.water(view.date)
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
+                    Text("Water  $water of $glasses glasses", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Pal.water)
+                    Spacer(Modifier.weight(1f))
+                    TextButton(enabled = water > 0, onClick = { Notifier.addWater(ctx, view.date, -1); version++ }) { Text("-1") }
+                    TextButton(onClick = { Notifier.addWater(ctx, view.date, 1); version++ }) { Text("+1 glass") }
+                }
             }
         }
         view.next?.let { n ->
@@ -241,31 +265,47 @@ private fun TodayScreen(store: Store) {
                             style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onPrimary)
                         Detail(n, MaterialTheme.colorScheme.onPrimary, onPrimary = true)
-                        Button(
-                            onClick = { toggle(n) },
-                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.onPrimary, contentColor = MaterialTheme.colorScheme.primary),
-                            modifier = Modifier.padding(top = 10.dp),
-                        ) { Text("Mark done") }
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 10.dp)) {
+                            Button(
+                                onClick = { toggle(n) },
+                                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.onPrimary, contentColor = MaterialTheme.colorScheme.primary),
+                            ) { Text("Mark done") }
+                            TextButton(onClick = { dialog = n.id to "skip" }) { Text("Skip", color = MaterialTheme.colorScheme.onPrimary) }
+                            if (n.kind == "meal" || n.kind == "workout") {
+                                TextButton(onClick = { dialog = n.id to "replace" }) {
+                                    Text("Something else", color = MaterialTheme.colorScheme.onPrimary)
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
         items(view.steps, key = { it.id }) { s ->
             val done = s.id in view.done
+            val entry = view.entries[s.id]
+            val skipped = entry?.status == "skipped"
             val open = expanded[s.id] == true
             Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
                 Text(PlanEngine.fmt(s.timeMin), fontFamily = FontFamily.Monospace, fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(66.dp).padding(top = 4.dp))
                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(34.dp).fillMaxHeight()) {
-                    val ring = if (s.kind == "water") Pal.water else MaterialTheme.colorScheme.onSurface
+                    val ring = when {
+                        skipped -> Pal.skip
+                        s.kind == "water" -> Pal.water
+                        else -> MaterialTheme.colorScheme.onSurface
+                    }
                     Box(
                         Modifier.size(26.dp).clip(CircleShape)
                             .background(if (done) Pal.ok else Color.Transparent)
                             .border(BorderStroke(2.dp, if (done) Pal.ok else ring), CircleShape)
                             .clickable { toggle(s) },
                         contentAlignment = Alignment.Center,
-                    ) { if (done) Icon(Icons.Filled.Check, "Done", tint = Color.White, modifier = Modifier.size(16.dp)) }
+                    ) {
+                        if (done) Icon(Icons.Filled.Check, "Done", tint = Color.White, modifier = Modifier.size(16.dp))
+                        else if (skipped) Text("-", color = Pal.skip, fontWeight = FontWeight.Bold)
+                    }
                     Box(Modifier.width(2.dp).weight(1f).background(MaterialTheme.colorScheme.outline))
                 }
                 Card(
@@ -282,11 +322,32 @@ private fun TodayScreen(store: Store) {
                         }
                         val sub = s.name ?: s.note
                         if (sub != null && (s.kind != "sleep")) Text(sub, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+                        if (entry != null) {
+                            val line = when (entry.status) {
+                                "skipped" -> "Skipped" + if (entry.text.isNotBlank()) ": ${entry.text}" else ""
+                                "replaced" -> (if (s.kind == "meal") "Ate instead: " else "Did instead: ") + entry.text +
+                                    (entry.kcal?.let { " (~$it kcal)" } ?: "")
+                                else -> null
+                            }
+                            if (line != null) Text(line, fontSize = 13.sp, fontWeight = FontWeight.Medium,
+                                color = if (skipped) Pal.skip else Pal.ok, modifier = Modifier.padding(top = 4.dp))
+                            if (entry.note.isNotBlank()) Text("Your request: ${entry.note}", fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp))
+                        }
                         if (open || (s.id == view.next?.id && !done)) {
                             Detail(s, MaterialTheme.colorScheme.onSurface, onPrimary = false)
-                            if (s.kind == "meal" && plan != null) {
-                                TextButton(onClick = { store.bumpSwap(view.date, s.id); Notifier.scheduleNext(ctx); version++ }) {
-                                    Text("Show a different meal")
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                if (!skipped) TextButton(onClick = { dialog = s.id to "skip" }) { Text("Skip") }
+                                if (s.kind == "meal" || s.kind == "workout") {
+                                    TextButton(onClick = { dialog = s.id to "replace" }) {
+                                        Text(if (s.kind == "meal") "Ate something else" else "Did something else")
+                                    }
+                                }
+                                TextButton(onClick = { dialog = s.id to "note" }) { Text("Ask for a change") }
+                                if (s.kind == "meal" && plan != null) {
+                                    TextButton(onClick = { store.bumpSwap(view.date, s.id); Notifier.scheduleNext(ctx); version++ }) {
+                                        Text("Show a different meal")
+                                    }
                                 }
                             }
                         } else if (s.kind == "meal") {
@@ -361,9 +422,19 @@ private fun MeScreen(store: Store, onEdit: () -> Unit, onRebuild: () -> Unit, on
             }
         }
         item {
+            val w = store.week(PlanEngine.activeDate(p, java.time.LocalDateTime.now()))
+            Panel("Last 7 days") {
+                Stat("Days with a check-in", "${w.daysLogged} of 7")
+                Stat("Average completion", "${w.avgPct}%")
+                Stat("Skipped steps", "${w.skipped}")
+                Stat("Meals or workouts swapped", "${w.replaced}")
+                w.mostSkipped?.let { Stat("Skipped most", PlanEngine.STEP_NAMES[it] ?: it) }
+            }
+        }
+        item {
             Panel("Your plan") {
                 Text(plan?.summary ?: "", fontSize = 14.sp)
-                Text(if (plan?.source == "ai") "Meals chosen by Claude for your profile" else "Built by the offline planner",
+                Text(if (plan?.source == "ai") "Meals written by an AI service for your profile" else "Built by the offline planner",
                     fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
             }
         }

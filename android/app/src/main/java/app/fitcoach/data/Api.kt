@@ -64,11 +64,36 @@ object Api {
         }
     }.getOrElse { store.syncNote = "Could not reach the server. Your ticks are saved and will upload later."; false }
 
+    /** Uploads one day: ticks, skipped / replaced / noted steps, and water glasses. */
     fun syncDay(store: Store, date: LocalDate): Boolean = runCatching {
         if (!store.consent || store.userId == null) return false
+        val entries = JSONObject()
+        store.entries(date).forEach { (id, e) -> entries.put(id, Store.entryTo(e)) }
         val body = JSONObject().put("day", date.toString()).put("done", JSONArray(store.done(date).toList()))
+            .put("entries", entries).put("water", store.water(date))
         call("POST", "/api/sync", body, store).code == 200
     }.getOrDefault(false)
+
+    class MealReading(val items: List<String>, val kcal: Int?, val note: String, val error: String? = null)
+
+    /** Asks the backend to read a meal photo (base64 JPEG). The photo is not stored. [MealReading.error] is set on failure. */
+    fun readMeal(store: Store, imageB64: String): MealReading {
+        fun fail(msg: String) = MealReading(emptyList(), null, "", msg)
+        if (!store.consent || store.userId == null) return fail("Turn on sharing under Me, Edit profile to read photos. Or type what you ate.")
+        return runCatching {
+            val r = call("POST", "/api/meal-photo", JSONObject().put("image", imageB64), store, timeoutMs = 120000)
+            when (r.code) {
+                200 -> {
+                    val j = JSONObject(r.body)
+                    val arr = j.getJSONArray("items")
+                    MealReading((0 until arr.length()).map { arr.getString(it) }, if (j.has("kcal")) j.getInt("kcal") else null, j.optString("note", ""))
+                }
+                503 -> fail("Photo reading is not switched on yet. Type what you ate instead.")
+                429 -> fail("You have used today's photo reads. Type what you ate instead.")
+                else -> fail(runCatching { JSONObject(r.body).getString("error") }.getOrDefault("Could not read that photo."))
+            }
+        }.getOrElse { fail("Could not reach the server. Type what you ate instead.") }
+    }
 
     /** Deletes the server-side account and logs. True also when there is nothing on the server to delete. */
     fun deleteAccount(store: Store): Boolean = runCatching {
@@ -76,12 +101,13 @@ object Api {
         call("DELETE", "/api/me", null, store).code in listOf(200, 401)
     }.getOrDefault(false)
 
-    /** Asks the backend (which holds the Claude API key) for a personalised plan. Null means use the offline planner. */
+    /** Asks the backend (which holds the AI key) for a personalised plan. Null means use the offline planner. */
     fun aiPlan(store: Store, p: Profile): Plan? = runCatching {
         if (!store.consent || store.userId == null) return null
         val t = PlanEngine.targets(p)
         val targets = JSONObject().put("kcal", t.kcal).put("protein", t.protein)
-        val body = JSONObject().put("profile", Store.profileTo(p).put("targets", targets))
+        // No username: the AI provider only needs body stats, goal, diet and health flags.
+        val body = JSONObject().put("profile", Store.profileTo(p).apply { remove("username") }.put("targets", targets))
         val r = call("POST", "/api/plan", body, store, timeoutMs = 120000)
         if (r.code != 200) return null
         // Slots the AI leaves out fall back to the offline planner inside PlanEngine.dayPlan.
