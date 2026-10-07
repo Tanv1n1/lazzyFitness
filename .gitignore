@@ -22,3 +22,4 @@ __pycache__/
 *.apk
 *.zip
 .DS_Store
+backend/.current_tunnel_url
