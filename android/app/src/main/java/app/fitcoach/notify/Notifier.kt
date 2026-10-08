@@ -70,7 +70,6 @@ object Notifier {
     fun scheduleNext(ctx: Context) {
         val store = Store(ctx)
         val p = store.profile ?: return
-        val plan = store.plan ?: PlanEngine.localPlan(p)
         val zone = ZoneId.systemDefault()
         val glasses = PlanEngine.glassTarget(PlanEngine.targets(p))
         val base = PlanEngine.activeDate(p, LocalDateTime.now())
@@ -82,7 +81,7 @@ object Notifier {
             val date = base.plusDays(offset.toLong())
             val done = store.done(date)
             val entries = store.entries(date)
-            for (s in PlanEngine.dayPlan(p, plan, date) { slot -> store.swaps(date, slot) }) {
+            for (s in store.daySteps(date)) {
                 if (s.id in done || entries[s.id]?.status == "skipped") continue
                 slots += Slot(epoch(date, s.timeMin), date, s.id)
             }
@@ -213,9 +212,7 @@ class ReminderReceiver : BroadcastReceiver() {
             if (Notifier.isNudge(id)) {
                 Notifier.showWater(ctx, date, id)
             } else if (id !in store.done(date) && store.entries(date)[id]?.status != "skipped") {
-                val plan = store.plan ?: PlanEngine.localPlan(p)
-                PlanEngine.dayPlan(p, plan, date) { slot -> store.swaps(date, slot) }
-                    .firstOrNull { it.id == id }?.let { Notifier.show(ctx, date, it) }
+                store.daySteps(date).firstOrNull { it.id == id }?.let { Notifier.show(ctx, date, it) }
             }
         }
         Notifier.scheduleNext(ctx)

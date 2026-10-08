@@ -243,8 +243,8 @@ async function openUser(id){
   const topMiss=Object.entries(missed).sort((a,b)=>b[1]-a[1]).slice(0,3);
   const changes=[];d.logs.slice().reverse().forEach(l=>Object.entries(l.entries||{}).forEach(([sid,e])=>changes.push({day:l.day,sid,e})));
   const changeHtml=changes.slice(0,14).map(({day,sid,e})=>{
-    const what=e.s==="skipped"?"Skipped"+(e.text?" ("+esc(e.text)+")":""):e.s==="replaced"?"Had instead: "+esc(e.text)+(e.kcal?" (~"+e.kcal+" kcal)":""):"Change request";
-    return `<dt>${mdy(day)}<br>${STEP[sid]||esc(sid)}</dt><dd>${what}${e.note?`<br><b>Request:</b> ${esc(e.note)}`:""}</dd>`}).join("");
+    const what=e.s==="skipped"?"Skipped"+(e.text?" ("+esc(e.text)+")":""):e.s==="replaced"?"Had instead: "+esc(e.text)+(e.kcal?" (~"+e.kcal+" kcal)":""):"Change request"+(e.text?" ("+esc(e.text)+")":"");
+    return `<dt>${mdy(day)}<br>${STEP[sid]||esc(sid)}</dt><dd>${what}${e.note?`<br><b>Request:</b> ${esc(e.note)}`:""}${e.tip?`<br><b>AI tip:</b> ${esc(e.tip)}`:""}</dd>`}).join("");
   const waterToday=(logs[SUM.today]||{}).water;
   $("#drawer").innerHTML=`<div style="display:flex;justify-content:space-between;align-items:start;gap:12px"><div><h2 style="font-size:22px">${esc(u.username)}</h2><div style="color:var(--muted)">${u.age} yrs, ${esc(u.sex)}, ${u.height_cm} cm, ${u.weight_kg} kg</div></div><button class="btn" id="x">Close</button></div>
   <dl class="kv"><dt>Goal</dt><dd>${GOAL[u.goal]}</dd><dt>Daily target</dt><dd class="mono">${u.kcal||"-"} kcal, ${u.protein||"-"} g protein</dd><dt>Diet</dt><dd>${DIET[u.diet]}</dd><dt>Training</dt><dd>${u.place==="gym"?"Gym":"Home"}, ${u.wtime}</dd><dt>Wake / sleep</dt><dd class="mono">${esc(u.wake)} / ${esc(u.sleep)}</dd><dt>Medical flags</dt><dd>${u.conds.map(c=>`<span class="pill warn">${esc(COND[c]||c)}</span>`).join("")||"None"}</dd><dt>Plan built by</dt><dd>${u.plan_source==="ai"?"AI service":"Offline planner"}</dd><dt>Water today</dt><dd class="mono">${waterToday==null?"no log":waterToday+" glasses"}</dd><dt>Joined</dt><dd>${mdy(u.created_at.slice(0,10))}</dd><dt>Streak</dt><dd class="mono">${u.streak} days</dd></dl>

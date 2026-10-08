@@ -10,7 +10,7 @@ import tempfile
 import threading
 import time
 import urllib.error
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import urllib.request
 from datetime import date, datetime, timedelta, timezone
 
@@ -52,6 +52,8 @@ def profile(i, **kw):
 FAKE_MEAL = {"name": "Test meal", "items": ["1 bhakri", "1 bowl dal", "salad"], "skip": ["vada pav", "sweets"]}
 FAKE_REPLY = {"summary": "Fake plan", "watchlist": ["a", "b"],
               "meals": {k: [FAKE_MEAL] for k in ("breakfast", "mid", "lunch", "eve", "dinner", "prebed")}}
+FAKE_REVISED = {"name": "Test revised meal", "eat": ["2 moong cheela", "mint chutney", "1 guava"], "skip": ["maida"], "kcal": 380}
+FAKE_WORKOUT = {"title": "Short walk", "name": "20 min", "exercises": [["Brisk walk", "20 min"]], "note": "easy day"}
 FAKE_MEAL_READING = {"items": ["2 bhakri, ~220 kcal", "dal, 1 bowl, ~150 kcal"], "kcal": 370,
                      "confidence": "low", "note": "Portions are a guess."}
 fake_seen = []   # (path, authorization header, body text) of every call the server makes to the fake AI provider
@@ -61,9 +63,25 @@ class FakeProvider(BaseHTTPRequestHandler):
     def do_POST(self):
         body = self.rfile.read(int(self.headers.get("Content-Length") or 0)).decode()
         fake_seen.append((self.path, self.headers.get("Authorization"), body))
-        reply = FAKE_MEAL_READING if '"image_url"' in body else FAKE_REPLY
-        out = json.dumps({"choices": [{"message": {"content": "Here you go:\n" + json.dumps(reply)}}]}).encode()
-        self.send_response(200)
+        if '"image_url"' in body:
+            reply = {"items": [], "kcal": 0, "confidence": "high", "note": "No food."} if "MTExMTEx" in body else FAKE_MEAL_READING
+        elif "Revise ONE meal" in body:
+            reply = {"revision": FAKE_REVISED, "tip": "Swapped the paneer for moong."}
+        elif "Revise ONE workout" in body:
+            reply = {"revision": FAKE_WORKOUT, "tip": "Lighter today."}
+        elif "ate this instead" in body:
+            reply = {"kcal": 520, "tip": "Fine. Keep dinner light."}
+        elif "skipped their planned" in body:
+            reply = {"tip": "Add protein at dinner."}
+        else:
+            reply = FAKE_REPLY
+        text = "Here you go:\n" + json.dumps(reply)
+        if json.loads(body).get("model") == "bad-model":      # the main model answers with no JSON, so the fallback must step in
+            if "make slow" in body:
+                time.sleep(3)                                  # ... or is too slow, so the next model must join in
+            text = "Sorry, I cannot do that."
+        out = json.dumps({"choices": [{"message": {"content": text}}]}).encode()
+        self.send_response(429 if "force busy" in body else 200)    # lets a test play a provider that says "slow down"
         self.send_header("Content-Length", str(len(out)))
         self.end_headers()
         self.wfile.write(out)
@@ -107,9 +125,10 @@ def user_session(i):
 def main():
     tmp = tempfile.mkdtemp()
     env = {**os.environ, "FITCOACH_DB": os.path.join(tmp, "t.db"), "ADMIN_TOKEN": ADMIN, "PORT": str(PORT),
-           "INVITE_CODE": INVITE, "MAX_USERS": "5", "AI_DAILY_LIMIT": "2", "AI_PHOTO_DAILY_LIMIT": "2",
-           "AI_BASE_URL": f"http://127.0.0.1:{FAKE_PORT}/v1", "AI_API_KEY": "test-key", "AI_MODEL": "fake-model"}
-    fake = HTTPServer(("127.0.0.1", FAKE_PORT), FakeProvider)
+           "INVITE_CODE": INVITE, "MAX_USERS": "5", "AI_DAILY_LIMIT": "4",
+           "AI_BASE_URL": f"http://127.0.0.1:{FAKE_PORT}/v1", "AI_API_KEY": "test-key", "AI_MODEL": "bad-model",
+           "AI_FALLBACK_MODELS": "fake-model", "AI_HEDGE_SECONDS": "1"}
+    fake = ThreadingHTTPServer(("127.0.0.1", FAKE_PORT), FakeProvider)
     threading.Thread(target=fake.serve_forever, daemon=True).start()
     srv = subprocess.Popen([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "server.py")],
                            env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -168,14 +187,20 @@ def main():
         check("provider call uses the bearer key and chat/completions", path == "/v1/chat/completions" and auth == "Bearer test-key", f"{path} {auth}")
         check("username never reaches the provider", "Tester0" not in sent)
         check("health data the plan needs does reach it", "diabetes" in sent and "peanut allergy" in sent)
-        check("bad profile is refused before any provider call", req("POST", "/api/plan", {"profile": {"age": 3}}, hdr0)[0] == 400 and len(fake_seen) == 1)
+        models_asked = [json.loads(b)["model"] for _, _, b in fake_seen]
+        check("a failed main model falls back to the next one", models_asked == ["bad-model", "fake-model"], str(models_asked))
+        calls_before = len(fake_seen)
+        check("bad profile is refused before any provider call",
+              req("POST", "/api/plan", {"profile": {"age": 3}}, hdr0)[0] == 400 and len(fake_seen) == calls_before)
         check("second plan allowed", req("POST", "/api/plan", plan_body, hdr0)[0] == 200)
-        check("daily AI limit stops the third", req("POST", "/api/plan", plan_body, hdr0)[0] == 429)
+        req("POST", "/api/plan", plan_body, hdr0)
+        req("POST", "/api/plan", plan_body, hdr0)
+        check("one daily cap stops the fifth AI call", req("POST", "/api/plan", plan_body, hdr0)[0] == 429)
 
         # skipped and replaced steps, change requests and water
         day = today().isoformat()
         entries = {"lunch": {"s": "replaced", "text": "Poha and chai", "kcal": 450, "note": "less oil please"},
-                   "dinner": {"s": "skipped", "text": "Ate out"},
+                   "dinner": {"s": "skipped", "text": "Ate out", "tip": "Add protein tonight."},
                    "bogus": {"s": "skipped"}, "mid": {"s": "hacked"}}
         c, _ = req("POST", "/api/sync", {"day": day, "done": ["lunch"], "entries": entries, "water": 5}, hdr0)
         _, d0 = req("GET", f"/admin/api/users/{results[0][1]}", headers=A)
@@ -183,6 +208,7 @@ def main():
         check("skipped and replaced steps are stored, junk is dropped",
               c == 200 and set(today_log.get("entries", {})) == {"lunch", "dinner"}, str(today_log.get("entries")))
         check("water glasses are stored", today_log.get("water") == 5)
+        check("the AI tip on a skipped meal is stored", today_log.get("entries", {}).get("dinner", {}).get("tip") == "Add protein tonight.")
         _, u0 = req("GET", "/admin/api/users", headers=A)
         row0 = next(u for u in u0["users"] if u["id"] == results[0][1])
         check("admin counts skips, swaps and requests",
@@ -192,18 +218,65 @@ def main():
         # meal photo through the (fake) AI provider
         jpeg = base64.b64encode(b"\xff\xd8\xff\xe0" + b"0" * 2000).decode()
         seen_before = len(fake_seen)
-        c, meal = req("POST", "/api/meal-photo", {"image": jpeg}, hdr0)
+        hdr4 = {"X-User-Id": results[4][1], "X-User-Key": results[4][4]}
+        c, meal = req("POST", "/api/meal-photo", {"image": jpeg}, hdr4)
         check("meal photo is read", c == 200 and meal.get("kcal") == 370 and len(meal.get("items", [])) == 2, str(meal))
         check("low confidence is flagged", meal.get("note", "").startswith("Low confidence"), str(meal))
         sent_photo = fake_seen[seen_before][2] if len(fake_seen) > seen_before else ""
         check("photo goes to the provider as an image, without the username",
               '"image_url"' in sent_photo and "Tester0" not in sent_photo)
-        check("non-JPEG is refused", req("POST", "/api/meal-photo", {"image": base64.b64encode(b"hello world").decode()}, hdr0)[0] == 400)
-        check("bad base64 is refused", req("POST", "/api/meal-photo", {"image": "***"}, hdr0)[0] == 400)
+        empty_jpeg = base64.b64encode(b"\xff\xd8\xff\xe0" + b"1" * 2000).decode()
+        c, none_seen = req("POST", "/api/meal-photo", {"image": empty_jpeg}, {"X-User-Id": results[1][1], "X-User-Key": results[1][4]})
+        check("a photo with no food is reported as such, not as an error",
+              c == 200 and none_seen.get("items") == [] and "could not see" in none_seen.get("note", ""), f"{c} {none_seen}")
+        check("non-JPEG is refused", req("POST", "/api/meal-photo", {"image": base64.b64encode(b"hello world").decode()}, hdr4)[0] == 400)
+        check("bad base64 is refused", req("POST", "/api/meal-photo", {"image": "***"}, hdr4)[0] == 400)
         check("photo endpoint needs a valid user",
               req("POST", "/api/meal-photo", {"image": jpeg}, {"X-User-Id": results[0][1], "X-User-Key": "x"})[0] == 401)
-        check("second photo allowed", req("POST", "/api/meal-photo", {"image": jpeg}, hdr0)[0] == 200)
-        check("daily photo limit stops the third", req("POST", "/api/meal-photo", {"image": jpeg}, hdr0)[0] == 429)
+
+        # a slow main model is joined by the next one instead of making the person wait
+        hdr2 = {"X-User-Id": results[2][1], "X-User-Key": results[2][4]}
+        t0 = time.time()
+        c, _ = req("POST", "/api/plan", {"profile": {**profile(2), "other": "make slow"}}, hdr2)
+        took = time.time() - t0
+        check("a slow model is raced by the next one", c == 200 and took < 2.6, f"HTTP {c} in {took:.1f}s")
+
+        # change one step, or update the day after a skip or swap
+        hdr3 = {"X-User-Id": results[3][1], "X-User-Key": results[3][4]}
+        prof = {**profile(3), "targets": {"kcal": 1900, "protein": 100}}
+        lunch = {"id": "lunch", "kind": "meal", "title": "Lunch", "name": "Paneer bhurji", "eat": ["2 phulka", "paneer bhurji"],
+                 "skip": ["raita"], "exercises": [], "kcal": 640}
+        c, r = req("POST", "/api/step-ai", {"mode": "change", "request": "no paneer please", "step": lunch, "profile": prof}, hdr3)
+        check("change request rewrites that meal", c == 200 and r["revision"]["name"] == "Test revised meal" and r["revision"]["kcal"] == 380, f"{c} {r}")
+        sent = fake_seen[-1][2]
+        check("the request and the meal reach the model, the username does not",
+              "no paneer please" in sent and "Paneer bhurji" in sent and "Tester3" not in sent)
+        workout = {"id": "workout", "kind": "workout", "title": "Full body strength", "name": "40 min", "eat": [], "skip": [],
+                   "exercises": [["Squats", "3 x 15"]]}
+        c, r = req("POST", "/api/step-ai", {"mode": "change", "request": "knee hurts, go easy", "step": workout, "profile": prof}, hdr3)
+        check("a workout can be changed too", c == 200 and r["revision"]["title"] == "Short walk", f"{c} {r}")
+        c, r = req("POST", "/api/step-ai", {"mode": "replaced", "request": "2 samosas and chai", "step": lunch, "profile": prof}, hdr3)
+        check("a swapped meal gets calories and a tip, and no automatic rewrite of the next meal",
+              c == 200 and r["kcal"] == 520 and r["tip"] and "revision" not in r, f"{c} {r}")
+        c, r = req("POST", "/api/step-ai", {"mode": "skipped", "request": "Not hungry", "step": lunch, "profile": prof}, hdr3)
+        check("a skipped meal gets a tip", c == 200 and r["tip"] == "Add protein at dinner." and "revision" not in r, f"{c} {r}")
+        check("bad mode is refused", req("POST", "/api/step-ai", {"mode": "hack", "step": lunch, "profile": prof}, hdr3)[0] == 400)
+        check("unknown step is refused", req("POST", "/api/step-ai", {"mode": "change", "request": "x", "step": {**lunch, "id": "bogus"}, "profile": prof}, hdr3)[0] == 400)
+        check("a change request cannot be empty", req("POST", "/api/step-ai", {"mode": "change", "request": " ", "step": lunch, "profile": prof}, hdr3)[0] == 400)
+        check("daily limit stops further step updates", req("POST", "/api/step-ai", {"mode": "change", "request": "again", "step": lunch, "profile": prof}, hdr3)[0] == 429)
+
+        # replies that are almost JSON
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import server
+        check("a trailing comma in the reply is tolerated", server.parse_json_reply('Sure: {"a": [1, 2,], "b": 1,} done')[0] == {"a": [1, 2], "b": 1})
+        check("a plan missing meal slots is rejected", server.plan_from_reply({"meals": {"breakfast": [FAKE_MEAL]}})[0] is None)
+        check("a complete plan is accepted", server.plan_from_reply(FAKE_REPLY)[0] is not None)
+        check("a reply with no JSON is reported", server.parse_json_reply("no braces here")[0] is None)
+
+        # a provider that is rate limited
+        hdr1 = {"X-User-Id": results[1][1], "X-User-Key": results[1][4]}
+        c, busy = req("POST", "/api/plan", {"profile": {**profile(1), "other": "force busy"}}, hdr1)
+        check("provider rate limit becomes a busy reply", c == 429 and busy.get("error") == "ai_busy", f"{c} {busy}")
 
         # a user deletes their own data, which frees a slot
         uid4, key4 = results[4][1], results[4][4]

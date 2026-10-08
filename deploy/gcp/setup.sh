@@ -6,8 +6,6 @@
 #     sudo DOMAIN=yourname.duckdns.org DUCKDNS_TOKEN=your-duckdns-token bash deploy/gcp/setup.sh
 #   With your own domain already pointing at the VM:
 #     sudo DOMAIN=api.example.com bash deploy/gcp/setup.sh
-#
-#   Add WITH_AI=1 to install the Anthropic package so Claude-built plans work (also needs ANTHROPIC_API_KEY, see README).
 set -euo pipefail
 
 [ "$(id -u)" -eq 0 ] || { echo "Run this with sudo."; exit 1; }
@@ -23,7 +21,6 @@ BAK=/var/backups/lazy-fitness
 ENVF=/etc/lazy-fitness.env
 DOMAIN="${DOMAIN:?Set DOMAIN, for example DOMAIN=yourname.duckdns.org (HTTPS needs a name)}"
 DUCKDNS_TOKEN="${DUCKDNS_TOKEN:-}"
-WITH_AI="${WITH_AI:-0}"
 
 echo "[1/8] Installing packages"
 export DEBIAN_FRONTEND=noninteractive
@@ -49,13 +46,7 @@ rm -rf "$APP/backend/__pycache__" "$APP/backend/.admin_token" "$APP/backend/.inv
 chown -R root:root "$APP"
 chown lazyfit:lazyfit "$DATA"
 chmod 750 "$DATA"
-if [ "$WITH_AI" = "1" ]; then
-  apt-get install -y python3-venv
-  [ -d "$APP/venv" ] || python3 -m venv "$APP/venv"
-  "$APP/venv/bin/pip" install --quiet --upgrade anthropic
-fi
 PY=/usr/bin/python3
-if [ -x "$APP/venv/bin/python" ]; then PY="$APP/venv/bin/python"; fi
 
 echo "[4/8] Writing settings to $ENVF"
 if [ ! -f "$ENVF" ]; then
@@ -67,9 +58,11 @@ FITCOACH_DB=$DATA/fitcoach.db
 ADMIN_TOKEN=$(python3 -c 'import secrets;print(secrets.token_urlsafe(24))')
 INVITE_CODE=$(python3 -c 'import secrets;print(secrets.token_hex(3))')
 MAX_USERS=10
-AI_DAILY_LIMIT=3
-# To switch on Claude-built plans, remove the # and paste your key, then: sudo systemctl restart lazy-fitness
-# ANTHROPIC_API_KEY=
+# To switch on AI plans, photo reading and step rewrites, remove the # on these three and fill them in,
+# then: sudo systemctl restart lazy-fitness. More settings are in the main README.
+# AI_BASE_URL=https://api.example.com/v1
+# AI_API_KEY=
+# AI_MODEL=
 EOF
 fi
 chmod 600 "$ENVF"

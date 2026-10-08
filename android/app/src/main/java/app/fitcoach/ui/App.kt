@@ -74,6 +74,7 @@ import app.fitcoach.data.Profile
 import app.fitcoach.data.Step
 import app.fitcoach.data.Store
 import app.fitcoach.data.Today
+import app.fitcoach.notify.Coach
 import app.fitcoach.notify.Notifier
 import app.fitcoach.widget.refreshWidgets
 import app.fitcoach.work.SyncWorker
@@ -210,8 +211,11 @@ private fun TodayScreen(store: Store) {
     dialog?.let { (id, mode) ->
         val step = view.steps.firstOrNull { it.id == id }
         if (step != null) {
-            StepDialog(store, step, mode, view.entries[id], onDismiss = { dialog = null }) { entry, done ->
+            StepDialog(store, step, mode, view.entries[id], onDismiss = { dialog = null }) { entry, done, rewrite ->
+                if (rewrite != null) store.setRevision(view.date, id, rewrite)
                 Notifier.record(ctx, view.date, id, entry, done)
+                // A skipped or swapped meal also gets an AI tip, calories, and maybe an adjusted next meal, in the background.
+                if (entry.status == "skipped" || entry.status == "replaced") Coach.afterSkipOrSwap(ctx, view.date, id) { version++ }
                 scope.launch { refreshWidgets(ctx) }
                 dialog = null
                 version++
@@ -331,8 +335,22 @@ private fun TodayScreen(store: Store) {
                             }
                             if (line != null) Text(line, fontSize = 13.sp, fontWeight = FontWeight.Medium,
                                 color = if (skipped) Pal.skip else Pal.ok, modifier = Modifier.padding(top = 4.dp))
+                            if (entry.tip.isNotBlank()) Text("Coach: ${entry.tip}", fontSize = 12.sp, color = Pal.water,
+                                modifier = Modifier.padding(top = 2.dp))
                             if (entry.note.isNotBlank()) Text("Your request: ${entry.note}", fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp))
+                        }
+                        view.revisions[s.id]?.let { rev ->
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(if (rev.why.isNotBlank()) "Rewritten: ${rev.why}" else "Rewritten by the AI", fontSize = 12.sp,
+                                    color = Pal.water, modifier = Modifier.weight(1f))
+                                TextButton(onClick = {
+                                    store.setRevision(view.date, s.id, null)
+                                    Notifier.scheduleNext(ctx)
+                                    scope.launch { refreshWidgets(ctx) }
+                                    version++
+                                }) { Text("Undo") }
+                            }
                         }
                         if (open || (s.id == view.next?.id && !done)) {
                             Detail(s, MaterialTheme.colorScheme.onSurface, onPrimary = false)
@@ -343,7 +361,9 @@ private fun TodayScreen(store: Store) {
                                         Text(if (s.kind == "meal") "Ate something else" else "Did something else")
                                     }
                                 }
-                                TextButton(onClick = { dialog = s.id to "note" }) { Text("Ask for a change") }
+                                TextButton(onClick = { dialog = s.id to "note" }) {
+                                    Text(when (s.kind) { "meal" -> "Change this meal"; "workout" -> "Change this workout"; else -> "Note to coach" })
+                                }
                                 if (s.kind == "meal" && plan != null) {
                                     TextButton(onClick = { store.bumpSwap(view.date, s.id); Notifier.scheduleNext(ctx); version++ }) {
                                         Text("Show a different meal")
