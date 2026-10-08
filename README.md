@@ -48,8 +48,10 @@ Optional extras for the OpenAI-compatible provider:
 
 | Variable | Use |
 |---|---|
-| `AI_FALLBACK_MODELS` | comma-separated model ids tried in order when the main model errors or returns broken JSON. A lone model is tried twice |
-| `AI_VISION_MODEL` | the model that reads meal photos. It must accept images. Defaults to `AI_MODEL` |
+| `AI_FALLBACK_MODELS` | comma-separated model ids. They are raced, not just queued: the next model starts at once if one fails, or alongside it if one is slow. First valid answer wins. A lone model is tried twice |
+| `AI_VISION_MODEL` | one or more models (comma-separated) that read meal photos. They must accept images. A model that reports "no food" is followed by the next one. Defaults to the plan models |
+| `AI_HEDGE_SECONDS` | how long a slow model runs alone before the next one joins (default 20) |
+| `AI_STEP_DAILY_LIMIT` | AI rewrites and skip / swap updates per user per day (default 15) |
 | `AI_MIN_GAP_SECONDS` | spacing between provider calls, for a requests-per-minute cap (`12.5` for 5 per minute) |
 
 Replies are parsed leniently (code fences and trailing commas are tolerated). If the provider is busy or its balance is
@@ -73,7 +75,7 @@ message to a user) would need Firebase Cloud Messaging and is not included.
 
 - **Timeline** starts at wake time with 400 ml water. Workout, meals and sleep are spaced across the person's own wake and sleep times. Each meal lists foods to eat and to skip.
 - **Reminders**: one alarm is armed for the next undone step. It shows the meal, what to eat, what to skip and a Done button, then arms the next one. Reboot, app update and clock changes re-arm it.
-- **Skip, swap, ask**: on any step you can mark it skipped (with a reason), say what you had instead, or write a change request for your coach. For meals you can also choose or take a photo, and an AI vision model lists the food and estimates calories. You check and edit the result before saving. The photo is not stored, on the phone or the server.
+- **Skip, swap, change**: on any step you can mark it skipped (with a reason) or say what you had instead. The AI then estimates the calories, gives a short tip, and may adjust your next meal to make up for it. "Change this meal" (or workout) takes a request like "no paneer" and the AI rewrites just that step, with an Undo. For meals you can also choose or take a photo, and an AI vision model lists the food and estimates calories. You check and edit the result before saving. The photo is not stored, on the phone or the server.
 - **Water**: a glass counter on the Today screen and four water reminders between breakfast and dinner, each with a "Drank a glass" button. Reminders stop once the day's target is reached.
 - **Last 7 days** card on the Me tab: check-in days, average completion, skips, swaps and the step skipped most.
 - **Widget**: progress, streak, next step and a Done button.

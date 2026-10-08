@@ -199,7 +199,7 @@ def main():
         # skipped and replaced steps, change requests and water
         day = today().isoformat()
         entries = {"lunch": {"s": "replaced", "text": "Poha and chai", "kcal": 450, "note": "less oil please"},
-                   "dinner": {"s": "skipped", "text": "Ate out"},
+                   "dinner": {"s": "skipped", "text": "Ate out", "tip": "Add protein tonight."},
                    "bogus": {"s": "skipped"}, "mid": {"s": "hacked"}}
         c, _ = req("POST", "/api/sync", {"day": day, "done": ["lunch"], "entries": entries, "water": 5}, hdr0)
         _, d0 = req("GET", f"/admin/api/users/{results[0][1]}", headers=A)
@@ -207,6 +207,7 @@ def main():
         check("skipped and replaced steps are stored, junk is dropped",
               c == 200 and set(today_log.get("entries", {})) == {"lunch", "dinner"}, str(today_log.get("entries")))
         check("water glasses are stored", today_log.get("water") == 5)
+        check("the AI tip on a skipped meal is stored", today_log.get("entries", {}).get("dinner", {}).get("tip") == "Add protein tonight.")
         _, u0 = req("GET", "/admin/api/users", headers=A)
         row0 = next(u for u in u0["users"] if u["id"] == results[0][1])
         check("admin counts skips, swaps and requests",

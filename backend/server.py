@@ -400,7 +400,7 @@ def clean_entries(raw):
         if sid not in STEP_IDS or not isinstance(e, dict) or e.get("s") not in ("skipped", "replaced", "note"):
             continue
         item = {"s": e["s"]}
-        for key, limit in (("text", 160), ("note", 200)):
+        for key, limit in (("text", 160), ("note", 200), ("tip", 160)):
             v = plain(e.get(key, ""), limit)
             if v:
                 item[key] = v
