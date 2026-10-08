@@ -19,7 +19,7 @@ day or two. See docs.railway.com/pricing/plans for current terms, including whet
    | `INVITE_CODE` | any short code you give testers |
    | `MAX_USERS` | `10` |
    | `FITCOACH_DB` | `/data/fitcoach.db` |
-   | `AI_BASE_URL`, `AI_API_KEY`, `AI_MODEL` (and optionally `AI_FALLBACK_MODELS`, `AI_VISION_MODEL`, `AI_MIN_GAP_SECONDS`) | optional, AI plans and photo reading. See "Run the backend" in the main README. Use a key with a small spend limit |
+   | `AI_BASE_URL`, `AI_API_KEY`, `AI_MODEL` (and optionally `AI_FALLBACK_MODELS`, `AI_MIN_GAP_SECONDS`) | optional, AI plans and photo reading. See "Run the backend" in the main README. Use a key with a small spend limit |
 
 5. Add a **Volume** and mount it at `/data`. Without it the database is wiped on every restart.
 6. **Settings, Networking, Generate Domain**. Check `https://<domain>/api/health` returns `{"ok": true}`.

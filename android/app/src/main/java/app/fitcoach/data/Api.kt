@@ -74,12 +74,20 @@ object Api {
         call("POST", "/api/sync", body, store).code == 200
     }.getOrDefault(false)
 
+    /** What to tell the person when an AI route did not answer 200. */
+    private fun aiFailure(code: Int, body: String): String = when {
+        code == 429 && body.contains("ai_busy") -> "The AI is busy right now. Try again in a minute."
+        code == 429 -> "You have used today's AI help. Try again tomorrow."
+        code == 503 -> "The AI is not available right now. Try again in a minute."
+        else -> runCatching { JSONObject(body).getString("error") }.getOrDefault("The AI could not do that.")
+    }
+
     class MealReading(val items: List<String>, val kcal: Int?, val note: String, val error: String? = null)
 
     /** Asks the backend to read a meal photo (base64 JPEG). The photo is not stored. [MealReading.error] is set on failure. */
     fun readMeal(store: Store, imageB64: String): MealReading {
         fun fail(msg: String) = MealReading(emptyList(), null, "", msg)
-        if (!store.consent || store.userId == null) return fail("Turn on sharing under Me, Edit profile to read photos. Or type what you ate.")
+        if (!store.consent || store.userId == null) return fail("Turn on sharing under Me, Edit profile to read photos.")
         return runCatching {
             val r = call("POST", "/api/meal-photo", JSONObject().put("image", imageB64), store, timeoutMs = 120000)
             when (r.code) {
@@ -88,14 +96,9 @@ object Api {
                     val arr = j.getJSONArray("items")
                     MealReading((0 until arr.length()).map { arr.getString(it) }, if (j.has("kcal")) j.getInt("kcal") else null, j.optString("note", ""))
                 }
-                503 -> fail("Photo reading is not switched on yet. Type what you ate instead.")
-                429 -> fail(
-                    if (r.body.contains("ai_busy")) "Photo reading is busy right now. Try again in a minute, or type what you ate."
-                    else "You have used today's photo reads. Type what you ate instead."
-                )
-                else -> fail(runCatching { JSONObject(r.body).getString("error") }.getOrDefault("Could not read that photo."))
+                else -> fail(aiFailure(r.code, r.body))
             }
-        }.getOrElse { fail("Could not reach the server. Type what you ate instead.") }
+        }.getOrElse { fail("Could not reach the server.") }
     }
 
     /** Deletes the server-side account and logs. True also when there is nothing on the server to delete. */
@@ -112,33 +115,26 @@ object Api {
         .apply { s.kcal?.let { put("kcal", it) } }
 
     /**
-     * Asks the AI about one step. [mode]: "change" rewrites [step] to match [request]; "skipped" and "replaced" (where [request] is
-     * what was eaten instead) return a tip, the calories of what was eaten, and optionally a rewrite of the [next] meal.
+     * Asks the AI about one step. [mode]: "change" rewrites [step] to match [request]; "skipped" (request is the reason) and
+     * "replaced" (request is what was eaten instead) return a tip, and for "replaced" the calories of what was eaten.
      * [StepAi.error] says why nothing came back, in words for the person.
      */
-    fun stepAi(store: Store, mode: String, step: Step, request: String, next: Step?, eatenKcal: Int, targetKcal: Int): StepAi {
+    fun stepAi(store: Store, mode: String, step: Step, request: String): StepAi {
         fun fail(msg: String) = StepAi(null, null, "", msg)
         val p = store.profile ?: return fail("Set up your profile first.")
         if (!store.consent || store.userId == null) return fail("Turn on sharing under Me, Edit profile, so the AI can help.")
         return runCatching {
             val t = PlanEngine.targets(p)
             val body = JSONObject().put("mode", mode).put("request", request).put("step", stepJson(step))
-                .put("day", JSONObject().put("eaten_kcal", eatenKcal).put("target_kcal", targetKcal))
                 .put("profile", Store.profileTo(p).apply { remove("username") }
                     .put("targets", JSONObject().put("kcal", t.kcal).put("protein", t.protein)))
-                .apply { next?.let { put("next", stepJson(it)) } }
             val r = call("POST", "/api/step-ai", body, store, timeoutMs = 150000)
             when (r.code) {
                 200 -> {
                     val j = JSONObject(r.body)
                     StepAi(j.optJSONObject("revision")?.let { Store.revisionFrom(it) }, if (j.has("kcal")) j.getInt("kcal") else null, j.optString("tip", ""))
                 }
-                429 -> fail(
-                    if (r.body.contains("ai_busy")) "The AI is busy right now. Try again in a minute."
-                    else "You have used today's AI updates. Try again tomorrow."
-                )
-                503 -> fail("The AI could not do that right now. Try again in a minute.")
-                else -> fail(runCatching { JSONObject(r.body).getString("error") }.getOrDefault("The AI could not do that."))
+                else -> fail(aiFailure(r.code, r.body))
             }
         }.getOrElse { fail("Could not reach the server.") }
     }

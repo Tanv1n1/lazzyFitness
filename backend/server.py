@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """Lazy Fitness backend: user sync API for the Android app, admin API and admin website.
 
-Runs on the Python standard library only (SQLite storage). The optional AI plan
-endpoint uses the official `anthropic` package if it is installed and
-ANTHROPIC_API_KEY (or an `ant auth login` profile) is available.
+Runs on the Python standard library only (SQLite storage). The optional AI features (plans, meal photos,
+step rewrites) call an OpenAI-compatible provider: set AI_BASE_URL, AI_API_KEY and AI_MODEL.
 
   python3 server.py                      # http://0.0.0.0:8080
   ADMIN_TOKEN=choose-a-long-secret python3 server.py
@@ -33,19 +32,14 @@ HOST = os.environ.get("HOST", "0.0.0.0")   # use 127.0.0.1 behind Caddy or a tun
 PASS_STEPS = 6          # a day counts toward the streak at 6 of 9 steps
 TOTAL_STEPS = 9
 STEP_IDS = ["water", "workout", "breakfast", "mid", "lunch", "eve", "dinner", "prebed", "sleep"]
-AI_MODEL = os.environ.get("FITCOACH_MODEL", "claude-opus-5-5")
-AI_BASE_URL = os.environ.get("AI_BASE_URL", "").rstrip("/")     # set = use an OpenAI-compatible provider instead of Anthropic
+AI_BASE_URL = os.environ.get("AI_BASE_URL", "").rstrip("/")     # an OpenAI-compatible provider; empty = AI is off
 AI_API_KEY = os.environ.get("AI_API_KEY", "")
-COMPAT_MODEL = os.environ.get("AI_MODEL", "")                    # model id exactly as that provider names it
-FALLBACK_MODELS = [m.strip() for m in os.environ.get("AI_FALLBACK_MODELS", "").split(",") if m.strip()]  # tried in order if the main model fails
-VISION_MODELS = [m.strip() for m in os.environ.get("AI_VISION_MODEL", "").split(",") if m.strip()]  # models that read meal photos; default: the plan models
+AI_MODEL = os.environ.get("AI_MODEL", "")                        # model id exactly as that provider names it
+FALLBACK_MODELS = [m.strip() for m in os.environ.get("AI_FALLBACK_MODELS", "").split(",") if m.strip()]  # raced if the main model fails or is slow
 AI_HEDGE = float(os.environ.get("AI_HEDGE_SECONDS", "20"))       # a slow model is joined by the next one after this long
-STEP_DAILY_LIMIT = int(os.environ.get("AI_STEP_DAILY_LIMIT", "15"))     # plan changes and skip / swap updates per user per day
 AI_MIN_GAP = float(os.environ.get("AI_MIN_GAP_SECONDS", "0"))    # spacing between provider calls, for a requests-per-minute cap (12.5 = 5 per minute)
 _ai_lock, _ai_last = threading.Lock(), [0.0]
-AI_ENABLED = os.environ.get("AI_ENABLED", "1") != "0"
-AI_DAILY_LIMIT = int(os.environ.get("AI_DAILY_LIMIT", "3"))     # AI plans per user per day (cost cap)
-PHOTO_DAILY_LIMIT = int(os.environ.get("AI_PHOTO_DAILY_LIMIT", "10"))   # meal photo reads per user per day
+AI_DAILY_LIMIT = int(os.environ.get("AI_DAILY_LIMIT", "20"))     # AI calls per user per day: plans, photo reads and step updates (cost cap)
 INVITE_CODE = os.environ.get("INVITE_CODE", "")                  # empty = open registration
 MAX_USERS = int(os.environ.get("MAX_USERS", "25"))              # users allowed
 _admin_fails = []                                                # timestamps of recent bad admin tokens
@@ -78,7 +72,7 @@ def init_db():
           done_count INTEGER NOT NULL DEFAULT 0, entries TEXT NOT NULL DEFAULT '{}',
           water INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL,
           PRIMARY KEY(user_id, day));
-        -- AI usage per user and day. Plans count under the plain date, photo reads under "photo:<date>".
+        -- AI calls per user and day.
         CREATE TABLE IF NOT EXISTS ai_use(user_id TEXT NOT NULL, day TEXT NOT NULL, n INTEGER NOT NULL DEFAULT 0,
           PRIMARY KEY(user_id, day));
         """
@@ -139,6 +133,22 @@ def num(v, lo, hi, name):
 def plain(x, n):
     """Short single-line text: control characters become spaces, trimmed, cut to n characters."""
     return re.sub(r"[\x00-\x1f]", " ", str(x)).strip()[:n]
+
+
+def kcal_of(k):
+    """An integer calorie count from 0 to 3000, or None."""
+    return int(k) if isinstance(k, (int, float)) and not isinstance(k, bool) and 0 <= k <= 3000 else None
+
+
+def clean_meal(name, items, skip, limit=6):
+    """A meal as short plain text: name, up to `limit` items, up to 4 skips. None without a name or any item."""
+    if not isinstance(items, list) or not plain(name, 80):
+        return None
+    items = [plain(i, 90) for i in items if str(i).strip()][:limit]
+    if not items:
+        return None
+    return {"name": plain(name, 80), "items": items,
+            "skip": [plain(i, 90) for i in skip if str(i).strip()][:4] if isinstance(skip, list) else []}
 
 
 def pick(p, k, opts):
@@ -214,36 +224,14 @@ def build_prompt(profile):
     )
 
 
-def ask_anthropic(prompt, image_b64=None, model=None):
-    try:
-        import anthropic
-    except ImportError:
-        return None, "anthropic package not installed (pip install anthropic)"
-    try:
-        client = anthropic.Anthropic()
-    except Exception as e:  # missing credentials
-        return None, f"no Anthropic credentials: {e}"
-    content = prompt if not image_b64 else [
-        {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": image_b64}},
-        {"type": "text", "text": prompt}]
-    try:
-        msg = client.messages.create(model=model or AI_MODEL, max_tokens=2000 if image_b64 else 8000,
-                                     messages=[{"role": "user", "content": content}])
-    except Exception as e:
-        return None, f"AI request failed: {type(e).__name__}"
-    if getattr(msg, "stop_reason", "") == "refusal":
-        return None, "AI declined the request"
-    return "".join(b.text for b in msg.content if getattr(b, "type", "") == "text"), None
-
-
 def ask_openai_compat(prompt, image_b64=None, model=None):
     """POST {AI_BASE_URL}/chat/completions with a bearer key. Never logs the key, the prompt or the image."""
+    model = model or AI_MODEL
+    if not (AI_BASE_URL and AI_API_KEY and model):
+        return None, "AI is not configured (set AI_BASE_URL, AI_API_KEY and AI_MODEL)"
     u = urlparse(AI_BASE_URL)
     if u.scheme != "https" and u.hostname not in ("127.0.0.1", "localhost"):
         return None, "AI_BASE_URL must start with https://"
-    model = model or COMPAT_MODEL
-    if not (AI_API_KEY and model):
-        return None, "AI_API_KEY and AI_MODEL must both be set"
     content = prompt if not image_b64 else [
         {"type": "text", "text": prompt},
         {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + image_b64}}]
@@ -289,11 +277,10 @@ def ask_json(prompt, image_b64=None, models=(), convert=lambda d: (d, None)):
     only slow, the next one starts alongside after AI_HEDGE seconds. The first valid answer wins and the rest are ignored.
     A lone model is listed twice, since replies vary. Stops launching when the provider is busy or out of balance."""
     models = list(models) if len(models) > 1 else list(models or [None]) * 2
-    ask = ask_openai_compat if AI_BASE_URL else ask_anthropic
     replies, launched, running = queue.Queue(), [0], [0]
 
     def attempt(model):
-        text, err = ask(prompt, image_b64, model)
+        text, err = ask_openai_compat(prompt, image_b64, model)
         if text is not None:
             data, err = parse_json_reply(text)
             if data is not None:
@@ -334,12 +321,9 @@ def plan_from_reply(data):
     for k in SLOTS:
         opts = []
         for o in meals.get(k, []) if isinstance(meals.get(k), list) else []:
-            if isinstance(o, dict) and isinstance(o.get("name"), str) and isinstance(o.get("items"), list):
-                opts.append({
-                    "name": o["name"][:80],
-                    "items": [str(i)[:90] for i in o["items"]][:6],
-                    "skip": [str(i)[:90] for i in o.get("skip", [])][:3],
-                })
+            meal = clean_meal(o.get("name"), o.get("items"), o.get("skip")) if isinstance(o, dict) else None
+            if meal:
+                opts.append(meal)
         if opts:
             out[k] = opts
     if len(out) < len(SLOTS):
@@ -352,7 +336,7 @@ def plan_from_reply(data):
 
 
 def ai_plan(profile):
-    return ask_json(build_prompt(profile), None, [COMPAT_MODEL if AI_BASE_URL else AI_MODEL, *FALLBACK_MODELS], plan_from_reply)
+    return ask_json(build_prompt(profile), None, [AI_MODEL, *FALLBACK_MODELS], plan_from_reply)
 
 
 MEAL_PROMPT = (
@@ -372,9 +356,8 @@ def meal_from_reply(data):
     if not items:
         return None, "no food seen"
     out = {"items": items}
-    k = data.get("kcal")
-    if isinstance(k, (int, float)) and not isinstance(k, bool) and 0 <= k <= 3000:
-        out["kcal"] = int(k)
+    if kcal_of(data.get("kcal")) is not None:
+        out["kcal"] = kcal_of(data["kcal"])
     note = plain(data.get("note", ""), 160)
     if data.get("confidence") == "low" and not note.lower().startswith("low"):
         note = ("Low confidence. " + note).strip()
@@ -384,8 +367,7 @@ def meal_from_reply(data):
 
 def read_meal(image_b64):
     """Ask the AI provider what is in a meal photo. Returns ({items, kcal?, note}, None) or (None, reason)."""
-    models = VISION_MODELS or [COMPAT_MODEL if AI_BASE_URL else AI_MODEL, *FALLBACK_MODELS]
-    out, err = ask_json(MEAL_PROMPT, image_b64, models, meal_from_reply)
+    out, err = ask_json(MEAL_PROMPT, image_b64, [AI_MODEL, *FALLBACK_MODELS], meal_from_reply)
     if out is None and err == "no food seen":          # every model that answered saw no food, so believe them
         return {"items": [], "note": "I could not see any food in that photo."}, None
     return out, err
@@ -404,9 +386,8 @@ def clean_entries(raw):
             v = plain(e.get(key, ""), limit)
             if v:
                 item[key] = v
-        k = e.get("kcal")
-        if isinstance(k, (int, float)) and not isinstance(k, bool) and 0 <= k <= 3000:
-            item["kcal"] = int(k)
+        if kcal_of(e.get("kcal")) is not None:
+            item["kcal"] = kcal_of(e["kcal"])
         out[sid] = item
     return out
 
@@ -423,9 +404,8 @@ def clean_step(raw):
           if isinstance(p, list) and len(p) == 2][:8]
     out = {"id": raw["id"], "kind": raw["kind"], "title": plain(raw.get("title", ""), 60), "name": plain(raw.get("name") or "", 80),
            "eat": strings("eat", 8, 90), "skip": strings("skip", 4, 90), "exercises": ex}
-    k = raw.get("kcal")
-    if isinstance(k, (int, float)) and not isinstance(k, bool) and 0 <= k <= 3000:
-        out["kcal"] = int(k)
+    if kcal_of(raw.get("kcal")) is not None:
+        out["kcal"] = kcal_of(raw["kcal"])
     return out
 
 
@@ -434,14 +414,12 @@ def revision_from(raw, kind):
     if not isinstance(raw, dict):
         return None
     if kind == "meal":
-        eat = [plain(i, 90) for i in raw.get("eat", []) if str(i).strip()][:6] if isinstance(raw.get("eat"), list) else []
-        if not plain(raw.get("name", ""), 80) or not eat:
+        meal = clean_meal(raw.get("name"), raw.get("eat"), raw.get("skip"))
+        if not meal:
             return None
-        out = {"name": plain(raw["name"], 80), "eat": eat,
-               "skip": [plain(i, 90) for i in raw.get("skip", []) if str(i).strip()][:4] if isinstance(raw.get("skip"), list) else []}
-        k = raw.get("kcal")
-        if isinstance(k, (int, float)) and not isinstance(k, bool) and 0 <= k <= 3000:
-            out["kcal"] = int(k)
+        out = {"name": meal["name"], "eat": meal["items"], "skip": meal["skip"]}
+        if kcal_of(raw.get("kcal")) is not None:
+            out["kcal"] = kcal_of(raw["kcal"])
         return out
     if kind == "workout":
         ex = [[plain(p[0], 60), plain(p[1], 60)] for p in (raw.get("exercises") if isinstance(raw.get("exercises"), list) else [])
@@ -464,7 +442,7 @@ MEAL_SHAPE = '{"name": string, "eat": [3 to 5 strings with quantities], "skip": 
 WORKOUT_SHAPE = '{"title": string, "name": "duration like 40 min", "exercises": [["exercise", "sets x reps"]], "note": string}'
 
 
-def step_prompt(mode, profile, step, text, nxt, day):
+def step_prompt(mode, profile, step, text):
     who = f"Person: {json.dumps(profile)}\n"
     if mode == "change":
         shape = WORKOUT_SHAPE if step["kind"] == "workout" else MEAL_SHAPE
@@ -473,41 +451,39 @@ def step_prompt(mode, profile, step, text, nxt, day):
                 f"original unless the request says otherwise.\n{who}Current {what}: {json.dumps(step)}\n"
                 f"Request: {json.dumps(text)}\n{STEP_RULES}"
                 f'Reply with only JSON: {{"revision": {shape}, "tip": string}}')
-    day_line = f"Calories so far today: {day['eaten_kcal']} of a {day['target_kcal']} target.\n"
-    next_line = (f"Next planned meal: {json.dumps(nxt)}\n" if nxt else "There is no later meal today.\n")
-    tail = (f"{STEP_RULES}- If the next meal should change to make up for this (for example more protein or fewer calories), "
-            f"return a revised version of the NEXT meal as 'revision', otherwise null. Never suggest skipping more meals or crash dieting.\n")
     if mode == "skipped":
         return (f"The person skipped their planned {step['title'].lower()}. Reason given: {json.dumps(text or 'none')}\n"
-                f"{who}Skipped meal: {json.dumps(step)}\n{day_line}{next_line}{tail}"
-                f'Reply with only JSON: {{"tip": string, "revision": {MEAL_SHAPE} or null}}')
+                f"{who}Skipped meal: {json.dumps(step)}\n{STEP_RULES}"
+                '- The tip says how to handle the rest of the day. Never suggest skipping more meals or crash dieting.\n'
+                'Reply with only JSON: {"tip": string}')
     return (f"The person ate this instead of their planned {step['title'].lower()}: {json.dumps(text)}\n"
-            f"{who}Planned meal: {json.dumps(step)}\n{day_line}{next_line}{tail}"
-            f"- Estimate the calories of what they actually ate as an integer 'kcal'.\n"
-            f'Reply with only JSON: {{"kcal": integer, "tip": string, "revision": {MEAL_SHAPE} or null}}')
+            f"{who}Planned meal: {json.dumps(step)}\n{STEP_RULES}"
+            "- Estimate the calories of what they actually ate as an integer 'kcal'.\n"
+            '- The tip says how this fits the day. Never suggest skipping more meals or crash dieting.\n'
+            'Reply with only JSON: {"kcal": integer, "tip": string}')
 
 
-def step_reply(mode, target_kind):
+def step_reply(mode, kind):
     """Builds the check that turns a model reply into the response for the app (or a failed try)."""
     def convert(data):
         if not isinstance(data, dict):
             return None, "AI reply was not an object"
-        rev = revision_from(data.get("revision"), target_kind)
-        if mode == "change" and rev is None:
-            return None, "AI reply had no revised step"
-        out = {"revision": rev, "tip": plain(data.get("tip", ""), 160)}
-        k = data.get("kcal")
+        out = {"tip": plain(data.get("tip", ""), 160)}
+        if mode == "change":
+            out["revision"] = revision_from(data.get("revision"), kind)
+            if out["revision"] is None:
+                return None, "AI reply had no revised step"
         if mode == "replaced":
-            if not isinstance(k, (int, float)) or isinstance(k, bool) or not 0 <= k <= 3000:
+            out["kcal"] = kcal_of(data.get("kcal"))
+            if out["kcal"] is None:
                 return None, "AI reply had no calories"
-            out["kcal"] = int(k)
         return out, None
     return convert
 
 
 # ---------- metrics ----------
 def use_ai(c, uid, key, limit):
-    """Counts one AI call for this user and key (a date, or "photo:<date>"). False when the daily cap is already reached."""
+    """Counts one AI call for this user and day. False when the daily cap is already reached."""
     row = c.execute("SELECT n FROM ai_use WHERE user_id=? AND day=?", (uid, key)).fetchone()
     if row and row["n"] >= limit:
         return False
@@ -717,8 +693,6 @@ class Handler(BaseHTTPRequestHandler):
         if not u:
             return self._send(401, {"error": "unauthorized"})
         body = self._json(1_500_000)       # read it all before answering, so the phone gets the real reply
-        if not AI_ENABLED:
-            return self._send(503, {"error": "ai_unavailable", "detail": "AI is switched off on this server"})
         img = str(body.get("image", ""))
         try:
             raw = base64.b64decode(img, validate=True)
@@ -726,8 +700,8 @@ class Handler(BaseHTTPRequestHandler):
             raise ValueError("image is not valid base64")
         if not raw.startswith(b"\xff\xd8\xff") or len(raw) > 1_000_000:
             raise ValueError("send a JPEG under 1 MB")
-        if not use_ai(c, u["id"], "photo:" + today(), PHOTO_DAILY_LIMIT):
-            return self._send(429, {"error": "ai_limit", "detail": "daily photo limit reached"})
+        if not use_ai(c, u["id"], today(), AI_DAILY_LIMIT):
+            return self._send(429, {"error": "ai_limit", "detail": "daily AI limit reached"})
         result, err = read_meal(img)
         if result is None:
             return self._ai_failed(err)
@@ -793,8 +767,6 @@ class Handler(BaseHTTPRequestHandler):
                 u = self._user()
                 if not u:
                     return self._send(401, {"error": "unauthorized"})
-                if not AI_ENABLED:
-                    return self._send(503, {"error": "ai_unavailable", "detail": "AI is switched off on this server"})
                 mode = body.get("mode")
                 if mode not in ("change", "skipped", "replaced"):
                     raise ValueError("mode must be change, skipped or replaced")
@@ -806,17 +778,11 @@ class Handler(BaseHTTPRequestHandler):
                 text = plain(body.get("request", ""), 200)
                 if mode != "skipped" and not text:
                     raise ValueError("request is empty")
-                nxt = clean_step(body["next"]) if body.get("next") else None
-                if nxt and nxt["kind"] != "meal":
-                    nxt = None
-                day = body.get("day") if isinstance(body.get("day"), dict) else {}
-                day = {k: int(num(day.get(k, 0), 0, 6000, k)) for k in ("eaten_kcal", "target_kcal")}
                 profile = slim_profile(body.get("profile") or {})
-                if not use_ai(c, u["id"], "step:" + today(), STEP_DAILY_LIMIT):
-                    return self._send(429, {"error": "ai_limit", "detail": "daily limit reached"})
-                target = step["kind"] if mode == "change" else "meal"
-                models = [COMPAT_MODEL if AI_BASE_URL else AI_MODEL, *FALLBACK_MODELS]
-                reply, err = ask_json(step_prompt(mode, profile, step, text, nxt, day), None, models, step_reply(mode, target))
+                if not use_ai(c, u["id"], today(), AI_DAILY_LIMIT):
+                    return self._send(429, {"error": "ai_limit", "detail": "daily AI limit reached"})
+                reply, err = ask_json(step_prompt(mode, profile, step, text), None, [AI_MODEL, *FALLBACK_MODELS],
+                                      step_reply(mode, step["kind"]))
                 if reply is None:
                     return self._ai_failed(err)
                 return self._send(200, reply)
@@ -824,11 +790,9 @@ class Handler(BaseHTTPRequestHandler):
                 u = self._user()
                 if not u:
                     return self._send(401, {"error": "unauthorized"})
-                if not AI_ENABLED:
-                    return self._send(503, {"error": "ai_unavailable", "detail": "AI is switched off on this server"})
                 slim = slim_profile(body.get("profile") or {})     # validate first: a bad request must not use up the daily cap
                 if not use_ai(c, u["id"], today(), AI_DAILY_LIMIT):
-                    return self._send(429, {"error": "ai_limit", "detail": "daily AI plan limit reached"})
+                    return self._send(429, {"error": "ai_limit", "detail": "daily AI limit reached"})
                 plan, err = ai_plan(slim)
                 if plan is None:
                     return self._ai_failed(err)
@@ -851,7 +815,7 @@ def main():
     print(f"Lazy Fitness backend on http://{HOST}:{PORT}")
     print(f"Admin site: http://localhost:{PORT}/admin")
     print(f"Invite code: {'required' if INVITE_CODE else 'NOT SET (anyone with the URL can register)'}  |  "
-          f"max users: {MAX_USERS}  |  AI plans: {'on, ' + str(AI_DAILY_LIMIT) + '/user/day' if AI_ENABLED else 'off'}")
+          f"max users: {MAX_USERS}  |  AI: {AI_MODEL + ', ' + str(AI_DAILY_LIMIT) + ' calls/user/day' if AI_BASE_URL else 'off'}")
     if not os.environ.get("ADMIN_TOKEN"):
         print(f"Admin token is stored in {HERE / '.admin_token'}")
     ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()

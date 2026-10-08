@@ -103,11 +103,20 @@ class Store(ctx: Context) {
     }
 
     // ---- what happened to a step besides ticking it: { "2026-10-07": { "lunch": {"s":"replaced","text":"..."} } } ----
-    private fun entryLog(): JSONObject =
-        runCatching { JSONObject(sp.getString("entries", "{}")!!) }.getOrDefault(JSONObject())
+    // Both live in preferences as "date -> id -> record". These two read and write one such map.
+    private fun readDay(key: String, date: LocalDate): JSONObject =
+        runCatching { JSONObject(sp.getString(key, "{}")!!) }.getOrDefault(JSONObject()).optJSONObject(date.toString()) ?: JSONObject()
+
+    private fun putDay(key: String, date: LocalDate, id: String, value: JSONObject?) {
+        val all = runCatching { JSONObject(sp.getString(key, "{}")!!) }.getOrDefault(JSONObject())
+        val day = all.optJSONObject(date.toString()) ?: JSONObject()
+        if (value == null) day.remove(id) else day.put(id, value)
+        all.put(date.toString(), day)
+        sp.edit().putString(key, all.toString()).apply()
+    }
 
     fun entries(date: LocalDate): Map<String, Entry> {
-        val day = entryLog().optJSONObject(date.toString()) ?: return emptyMap()
+        val day = readDay("entries", date)
         return day.keys().asSequence().associateWith { id ->
             val o = day.getJSONObject(id)
             Entry(o.optString("s", "note"), o.optString("text", ""), if (o.has("kcal")) o.getInt("kcal") else null,
@@ -115,30 +124,15 @@ class Store(ctx: Context) {
         }
     }
 
-    fun setEntry(date: LocalDate, id: String, e: Entry?) {
-        val all = entryLog()
-        val day = all.optJSONObject(date.toString()) ?: JSONObject()
-        if (e == null) day.remove(id) else day.put(id, entryTo(e))
-        all.put(date.toString(), day)
-        sp.edit().putString("entries", all.toString()).apply()
-    }
+    fun setEntry(date: LocalDate, id: String, e: Entry?) = putDay("entries", date, id, e?.let { entryTo(it) })
 
     // ---- AI rewrites of single steps: { "2026-10-07": { "lunch": { "name": "...", "eat": [...], "why": "..." } } } ----
-    private fun revisionLog(): JSONObject =
-        runCatching { JSONObject(sp.getString("revisions", "{}")!!) }.getOrDefault(JSONObject())
-
     fun revisions(date: LocalDate): Map<String, Revision> {
-        val day = revisionLog().optJSONObject(date.toString()) ?: return emptyMap()
+        val day = readDay("revisions", date)
         return day.keys().asSequence().mapNotNull { id -> runCatching { id to revisionFrom(day.getJSONObject(id)) }.getOrNull() }.toMap()
     }
 
-    fun setRevision(date: LocalDate, id: String, r: Revision?) {
-        val all = revisionLog()
-        val day = all.optJSONObject(date.toString()) ?: JSONObject()
-        if (r == null) day.remove(id) else day.put(id, revisionTo(r))
-        all.put(date.toString(), day)
-        sp.edit().putString("revisions", all.toString()).apply()
-    }
+    fun setRevision(date: LocalDate, id: String, r: Revision?) = putDay("revisions", date, id, r?.let { revisionTo(it) })
 
     /** The day's timeline as the person sees it: the plan, with meal swaps and any AI rewrites applied. */
     fun daySteps(date: LocalDate): List<Step> {

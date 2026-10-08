@@ -40,7 +40,6 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import app.fitcoach.data.Api
 import app.fitcoach.data.Entry
-import app.fitcoach.data.PlanEngine
 import app.fitcoach.data.Revision
 import app.fitcoach.data.Step
 import app.fitcoach.data.Store
@@ -103,7 +102,7 @@ fun StepDialog(
             val r = withContext(Dispatchers.IO) { Api.readMeal(store, b64) }
             busy = false
             if (r.error != null) {
-                msg = r.error
+                msg = r.error + " You can type what you ate instead."
                 return@launch
             }
             text = r.items.joinToString(", ")
@@ -195,8 +194,7 @@ fun StepDialog(
                             busy = true
                             error = ""
                             scope.launch {
-                                val target = store.profile?.let { PlanEngine.targets(it).kcal } ?: 0
-                                val r = withContext(Dispatchers.IO) { Api.stepAi(store, "change", step, note.trim(), null, 0, target) }
+                                val r = withContext(Dispatchers.IO) { Api.stepAi(store, "change", step, note.trim()) }
                                 busy = false
                                 if (r.error != null || r.revision == null) {
                                     error = r.error ?: "The AI could not do that."

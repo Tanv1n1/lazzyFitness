@@ -28,39 +28,33 @@ python3 server.py      # or plain: http://localhost:8080/admin
 The admin token comes from `ADMIN_TOKEN`, or is generated once into `backend/.admin_token`.
 
 Optional AI-written plans. The key stays on the server, never in the app. Only age, sex, height, weight, goal, diet,
-medical flags, targets and a short free-text note go to the provider. The username never does. Pick one provider:
+medical flags, targets and a short free-text note go to the provider. The username never does. Any OpenAI-compatible
+provider works (`chat/completions` with a bearer key):
 
 ```bash
-# Anthropic
-pip install anthropic
-export ANTHROPIC_API_KEY=...       # or run `ant auth login`
-
-# or any OpenAI-compatible provider (chat/completions with a bearer key)
 export AI_BASE_URL=https://api.example.com/v1     # must be https
 export AI_API_KEY=...
 export AI_MODEL=the-model-id-as-that-provider-names-it
 ```
 
-Without either, the app uses its offline planner. The consent text in the app names a third-party AI service, so only
-enable a provider you are willing to name to your users.
+Without these three, AI is off and the app uses its offline planner. The consent text in the app names a third-party AI
+service, so only enable a provider you are willing to name to your users. Photo reading needs a model that accepts images.
 
-Optional extras for the OpenAI-compatible provider:
+Optional extras:
 
 | Variable | Use |
 |---|---|
 | `AI_FALLBACK_MODELS` | comma-separated model ids. They are raced, not just queued: the next model starts at once if one fails, or alongside it if one is slow. First valid answer wins. A lone model is tried twice |
-| `AI_VISION_MODEL` | one or more models (comma-separated) that read meal photos. They must accept images. A model that reports "no food" is followed by the next one. Defaults to the plan models |
+| (photos) | photo reading uses the same chain. A model that reports "no food" is followed by the next one, since a model that cannot see the picture says that too |
 | `AI_HEDGE_SECONDS` | how long a slow model runs alone before the next one joins (default 20) |
-| `AI_STEP_DAILY_LIMIT` | AI rewrites and skip / swap updates per user per day (default 15) |
 | `AI_MIN_GAP_SECONDS` | spacing between provider calls, for a requests-per-minute cap (`12.5` for 5 per minute) |
 
 Replies are parsed leniently (code fences and trailing commas are tolerated). If the provider is busy or its balance is
 empty, the app quietly falls back to the offline planner and photo reading says to type instead. The reason is in the
 server log as `AI call failed: ...`.
 
-Limits for a small test: `INVITE_CODE`, `MAX_USERS` (10 in `run_test.sh`), `AI_DAILY_LIMIT` (3 plans per user per day),
-`AI_PHOTO_DAILY_LIMIT` (10 photo reads per user per day), `AI_ENABLED=0`, admin lockout after 20 wrong tokens.
-Cost depends on the provider. With Anthropic, a plan or a photo read is one API call.
+Limits for a small test: `INVITE_CODE`, `MAX_USERS` (10 in `run_test.sh`), `AI_DAILY_LIMIT` (20 AI calls per user per day,
+shared by plans, photo reads and step updates), admin lockout after 20 wrong tokens. Each AI call is one provider request.
 
 Reminders are scheduled on the phone, so they work without a server or Firebase. Server-sent push (for example a coach
 message to a user) would need Firebase Cloud Messaging and is not included.
@@ -75,7 +69,7 @@ message to a user) would need Firebase Cloud Messaging and is not included.
 
 - **Timeline** starts at wake time with 400 ml water. Workout, meals and sleep are spaced across the person's own wake and sleep times. Each meal lists foods to eat and to skip.
 - **Reminders**: one alarm is armed for the next undone step. It shows the meal, what to eat, what to skip and a Done button, then arms the next one. Reboot, app update and clock changes re-arm it.
-- **Skip, swap, change**: on any step you can mark it skipped (with a reason) or say what you had instead. The AI then estimates the calories, gives a short tip, and may adjust your next meal to make up for it. "Change this meal" (or workout) takes a request like "no paneer" and the AI rewrites just that step, with an Undo. For meals you can also choose or take a photo, and an AI vision model lists the food and estimates calories. You check and edit the result before saving. The photo is not stored, on the phone or the server.
+- **Skip, swap, change**: on any step you can mark it skipped (with a reason) or say what you had instead. The AI then gives a short tip and, for a swap, estimates the calories. "Change this meal" (or workout) takes a request like "no paneer" and the AI rewrites just that step, with an Undo. For meals you can also choose or take a photo, and an AI vision model lists the food and estimates calories. You check and edit the result before saving. The photo is not stored, on the phone or the server.
 - **Water**: a glass counter on the Today screen and four water reminders between breakfast and dinner, each with a "Drank a glass" button. Reminders stop once the day's target is reached.
 - **Last 7 days** card on the Me tab: check-in days, average completion, skips, swaps and the step skipped most.
 - **Widget**: progress, streak, next step and a Done button.

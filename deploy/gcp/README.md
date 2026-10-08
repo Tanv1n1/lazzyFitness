@@ -50,20 +50,17 @@ cd lazy-fitness
 sudo DOMAIN=lazyfit-yourname.duckdns.org DUCKDNS_TOKEN=paste-token-here bash deploy/gcp/setup.sh
 ```
 
-Add `WITH_AI=1` in front of `bash` to install the Anthropic package.
-
 At the end it prints the **server address**, **invite code**, **admin address** and **admin token**.
 Give testers the first two. Open `https://your-address/admin` and sign in with the token.
 
-## 5. Optional: Claude-built plans (this is the only paid part)
+## 5. Optional: AI plans, photo reading and step rewrites (the provider may charge)
 
 ```bash
-sudo WITH_AI=1 bash deploy/gcp/setup.sh     # once, installs the package
-sudo nano /etc/lazy-fitness.env             # remove the # before ANTHROPIC_API_KEY and paste your key
+sudo nano /etc/lazy-fitness.env             # remove the # on AI_BASE_URL, AI_API_KEY, AI_MODEL and fill them in
 sudo systemctl restart lazy-fitness
 ```
 
-Each user is capped at 3 AI plans a day (`AI_DAILY_LIMIT`). The key stays on the VM.
+Each user is capped at 20 AI calls a day (`AI_DAILY_LIMIT`). The key stays on the VM. See the main README for the other settings.
 
 ## Day-to-day
 

@@ -70,9 +70,9 @@ class FakeProvider(BaseHTTPRequestHandler):
         elif "Revise ONE workout" in body:
             reply = {"revision": FAKE_WORKOUT, "tip": "Lighter today."}
         elif "ate this instead" in body:
-            reply = {"kcal": 520, "tip": "Fine. Keep dinner light.", "revision": FAKE_REVISED}
+            reply = {"kcal": 520, "tip": "Fine. Keep dinner light."}
         elif "skipped their planned" in body:
-            reply = {"tip": "Add protein at dinner.", "revision": None}
+            reply = {"tip": "Add protein at dinner."}
         else:
             reply = FAKE_REPLY
         text = "Here you go:\n" + json.dumps(reply)
@@ -125,10 +125,9 @@ def user_session(i):
 def main():
     tmp = tempfile.mkdtemp()
     env = {**os.environ, "FITCOACH_DB": os.path.join(tmp, "t.db"), "ADMIN_TOKEN": ADMIN, "PORT": str(PORT),
-           "INVITE_CODE": INVITE, "MAX_USERS": "5", "AI_DAILY_LIMIT": "2", "AI_PHOTO_DAILY_LIMIT": "2",
+           "INVITE_CODE": INVITE, "MAX_USERS": "5", "AI_DAILY_LIMIT": "4",
            "AI_BASE_URL": f"http://127.0.0.1:{FAKE_PORT}/v1", "AI_API_KEY": "test-key", "AI_MODEL": "bad-model",
-           "AI_FALLBACK_MODELS": "fake-model", "AI_VISION_MODEL": "fake-model",
-           "AI_HEDGE_SECONDS": "1", "AI_STEP_DAILY_LIMIT": "4"}
+           "AI_FALLBACK_MODELS": "fake-model", "AI_HEDGE_SECONDS": "1"}
     fake = ThreadingHTTPServer(("127.0.0.1", FAKE_PORT), FakeProvider)
     threading.Thread(target=fake.serve_forever, daemon=True).start()
     srv = subprocess.Popen([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "server.py")],
@@ -194,7 +193,9 @@ def main():
         check("bad profile is refused before any provider call",
               req("POST", "/api/plan", {"profile": {"age": 3}}, hdr0)[0] == 400 and len(fake_seen) == calls_before)
         check("second plan allowed", req("POST", "/api/plan", plan_body, hdr0)[0] == 200)
-        check("daily AI limit stops the third", req("POST", "/api/plan", plan_body, hdr0)[0] == 429)
+        req("POST", "/api/plan", plan_body, hdr0)
+        req("POST", "/api/plan", plan_body, hdr0)
+        check("one daily cap stops the fifth AI call", req("POST", "/api/plan", plan_body, hdr0)[0] == 429)
 
         # skipped and replaced steps, change requests and water
         day = today().isoformat()
@@ -217,7 +218,8 @@ def main():
         # meal photo through the (fake) AI provider
         jpeg = base64.b64encode(b"\xff\xd8\xff\xe0" + b"0" * 2000).decode()
         seen_before = len(fake_seen)
-        c, meal = req("POST", "/api/meal-photo", {"image": jpeg}, hdr0)
+        hdr4 = {"X-User-Id": results[4][1], "X-User-Key": results[4][4]}
+        c, meal = req("POST", "/api/meal-photo", {"image": jpeg}, hdr4)
         check("meal photo is read", c == 200 and meal.get("kcal") == 370 and len(meal.get("items", [])) == 2, str(meal))
         check("low confidence is flagged", meal.get("note", "").startswith("Low confidence"), str(meal))
         sent_photo = fake_seen[seen_before][2] if len(fake_seen) > seen_before else ""
@@ -227,12 +229,10 @@ def main():
         c, none_seen = req("POST", "/api/meal-photo", {"image": empty_jpeg}, {"X-User-Id": results[1][1], "X-User-Key": results[1][4]})
         check("a photo with no food is reported as such, not as an error",
               c == 200 and none_seen.get("items") == [] and "could not see" in none_seen.get("note", ""), f"{c} {none_seen}")
-        check("non-JPEG is refused", req("POST", "/api/meal-photo", {"image": base64.b64encode(b"hello world").decode()}, hdr0)[0] == 400)
-        check("bad base64 is refused", req("POST", "/api/meal-photo", {"image": "***"}, hdr0)[0] == 400)
+        check("non-JPEG is refused", req("POST", "/api/meal-photo", {"image": base64.b64encode(b"hello world").decode()}, hdr4)[0] == 400)
+        check("bad base64 is refused", req("POST", "/api/meal-photo", {"image": "***"}, hdr4)[0] == 400)
         check("photo endpoint needs a valid user",
               req("POST", "/api/meal-photo", {"image": jpeg}, {"X-User-Id": results[0][1], "X-User-Key": "x"})[0] == 401)
-        check("second photo allowed", req("POST", "/api/meal-photo", {"image": jpeg}, hdr0)[0] == 200)
-        check("daily photo limit stops the third", req("POST", "/api/meal-photo", {"image": jpeg}, hdr0)[0] == 429)
 
         # a slow main model is joined by the next one instead of making the person wait
         hdr2 = {"X-User-Id": results[2][1], "X-User-Key": results[2][4]}
@@ -246,7 +246,6 @@ def main():
         prof = {**profile(3), "targets": {"kcal": 1900, "protein": 100}}
         lunch = {"id": "lunch", "kind": "meal", "title": "Lunch", "name": "Paneer bhurji", "eat": ["2 phulka", "paneer bhurji"],
                  "skip": ["raita"], "exercises": [], "kcal": 640}
-        dinner = {**lunch, "id": "dinner", "title": "Dinner", "name": "Dal and bhakri", "kcal": 520}
         c, r = req("POST", "/api/step-ai", {"mode": "change", "request": "no paneer please", "step": lunch, "profile": prof}, hdr3)
         check("change request rewrites that meal", c == 200 and r["revision"]["name"] == "Test revised meal" and r["revision"]["kcal"] == 380, f"{c} {r}")
         sent = fake_seen[-1][2]
@@ -256,13 +255,11 @@ def main():
                    "exercises": [["Squats", "3 x 15"]]}
         c, r = req("POST", "/api/step-ai", {"mode": "change", "request": "knee hurts, go easy", "step": workout, "profile": prof}, hdr3)
         check("a workout can be changed too", c == 200 and r["revision"]["title"] == "Short walk", f"{c} {r}")
-        c, r = req("POST", "/api/step-ai", {"mode": "replaced", "request": "2 samosas and chai", "step": lunch, "next": dinner,
-                                            "day": {"eaten_kcal": 0, "target_kcal": 1900}, "profile": prof}, hdr3)
-        check("a swapped meal gets calories, a tip and an adjusted next meal",
-              c == 200 and r["kcal"] == 520 and r["tip"] and r["revision"]["name"] == "Test revised meal", f"{c} {r}")
-        c, r = req("POST", "/api/step-ai", {"mode": "skipped", "request": "Not hungry", "step": lunch, "next": dinner,
-                                            "day": {"eaten_kcal": 0, "target_kcal": 1900}, "profile": prof}, hdr3)
-        check("a skipped meal gets a tip", c == 200 and r["tip"] == "Add protein at dinner." and r["revision"] is None, f"{c} {r}")
+        c, r = req("POST", "/api/step-ai", {"mode": "replaced", "request": "2 samosas and chai", "step": lunch, "profile": prof}, hdr3)
+        check("a swapped meal gets calories and a tip, and no automatic rewrite of the next meal",
+              c == 200 and r["kcal"] == 520 and r["tip"] and "revision" not in r, f"{c} {r}")
+        c, r = req("POST", "/api/step-ai", {"mode": "skipped", "request": "Not hungry", "step": lunch, "profile": prof}, hdr3)
+        check("a skipped meal gets a tip", c == 200 and r["tip"] == "Add protein at dinner." and "revision" not in r, f"{c} {r}")
         check("bad mode is refused", req("POST", "/api/step-ai", {"mode": "hack", "step": lunch, "profile": prof}, hdr3)[0] == 400)
         check("unknown step is refused", req("POST", "/api/step-ai", {"mode": "change", "request": "x", "step": {**lunch, "id": "bogus"}, "profile": prof}, hdr3)[0] == 400)
         check("a change request cannot be empty", req("POST", "/api/step-ai", {"mode": "change", "request": " ", "step": lunch, "profile": prof}, hdr3)[0] == 400)
