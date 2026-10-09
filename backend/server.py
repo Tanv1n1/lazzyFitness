@@ -251,8 +251,13 @@ def ask_openai_compat(prompt, image_b64=None, model=None):
         with urllib.request.urlopen(req, timeout=110) as r:
             return json.loads(r.read())["choices"][0]["message"]["content"] or "", None
     except urllib.error.HTTPError as e:
-        why = {429: "AI provider is busy", 402: "AI provider balance is empty"}
-        return None, why.get(e.code, f"AI provider returned HTTP {e.code}")
+        if e.code == 429:
+            return None, "AI provider is busy"
+        try:                                           # the provider's own words, e.g. "Daily check-in required" or "Insufficient balance"
+            said = plain(json.loads(e.read())["error"]["message"], 140)
+        except Exception:
+            said = ""
+        return None, f"AI provider {'refused' if e.code == 402 else 'returned HTTP ' + str(e.code)}: {said}".rstrip(": ")
     except Exception as e:
         return None, f"AI request failed: {type(e).__name__}"
 
@@ -275,7 +280,7 @@ def ask_json(prompt, image_b64=None, models=(), convert=lambda d: (d, None)):
 
     The first model starts at once. If it fails (error, broken JSON, wrong shape) the next one starts right away; if it is
     only slow, the next one starts alongside after AI_HEDGE seconds. The first valid answer wins and the rest are ignored.
-    A lone model is listed twice, since replies vary. Stops launching when the provider is busy or out of balance."""
+    A lone model is listed twice, since replies vary. Stops launching when the provider is busy or refuses the account (402)."""
     models = list(models) if len(models) > 1 else list(models or [None]) * 2
     replies, launched, running = queue.Queue(), [0], [0]
 
@@ -308,7 +313,7 @@ def ask_json(prompt, image_b64=None, models=(), convert=lambda d: (d, None)):
         if result is not None:
             return result, None
         err = e or err
-        stop = stop or "busy" in err or "balance" in err
+        stop = stop or err.startswith(("AI provider is busy", "AI provider refused"))
         if launched[0] < len(models) and not stop:
             launch()
     return None, err

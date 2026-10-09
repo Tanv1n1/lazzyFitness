@@ -78,6 +78,8 @@ object Api {
     private fun aiFailure(code: Int, body: String): String = when {
         code == 429 && body.contains("ai_busy") -> "The AI is busy right now. Try again in a minute."
         code == 429 -> "You have used today's AI help. Try again tomorrow."
+        code == 503 && body.contains("not configured") -> "AI is not switched on for this server yet."
+        code == 503 && body.contains("refused") -> "The AI service is not answering right now, and the server owner needs to look at it. Try again later."
         code == 503 -> "The AI is not available right now. Try again in a minute."
         else -> runCatching { JSONObject(body).getString("error") }.getOrDefault("The AI could not do that.")
     }
