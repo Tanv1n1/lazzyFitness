@@ -81,7 +81,11 @@ class FakeProvider(BaseHTTPRequestHandler):
                 time.sleep(3)                                  # ... or is too slow, so the next model must join in
             text = "Sorry, I cannot do that."
         out = json.dumps({"choices": [{"message": {"content": text}}]}).encode()
-        self.send_response(429 if "force busy" in body else 200)    # lets a test play a provider that says "slow down"
+        if "force refused" in body:                                  # lets a test play a provider that refuses the account
+            out = json.dumps({"error": {"message": "Daily check-in required to use free models."}}).encode()
+            self.send_response(402)
+        else:
+            self.send_response(429 if "force busy" in body else 200)    # ... or one that says "slow down"
         self.send_header("Content-Length", str(len(out)))
         self.end_headers()
         self.wfile.write(out)
@@ -277,6 +281,12 @@ def main():
         hdr1 = {"X-User-Id": results[1][1], "X-User-Key": results[1][4]}
         c, busy = req("POST", "/api/plan", {"profile": {**profile(1), "other": "force busy"}}, hdr1)
         check("provider rate limit becomes a busy reply", c == 429 and busy.get("error") == "ai_busy", f"{c} {busy}")
+
+        c, refused = req("POST", "/api/plan", {"profile": {**profile(1), "other": "force refused"}}, hdr1)
+        asked = len(fake_seen)
+        check("a refusal shows the provider's own message, and no other model is tried",
+              c == 503 and "Daily check-in required" in refused.get("detail", "") and fake_seen[-1][2].count("force refused") == 1
+              and sum("force refused" in b for _, _, b in fake_seen) == 1, f"{c} {refused}")
 
         # a user deletes their own data, which frees a slot
         uid4, key4 = results[4][1], results[4][4]
