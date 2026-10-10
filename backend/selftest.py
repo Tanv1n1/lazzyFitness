@@ -40,6 +40,15 @@ def req(method, path, body=None, headers=None):
         return e.code, json.loads(e.read() or b"{}")
 
 
+def raw_get(path):
+    """GET that returns (status, content type, bytes), for pages and files rather than JSON."""
+    try:
+        with urllib.request.urlopen(BASE + path, timeout=10) as resp:
+            return resp.status, resp.headers.get("Content-Type", ""), resp.read()
+    except urllib.error.HTTPError as e:
+        return e.code, e.headers.get("Content-Type", ""), e.read()
+
+
 def profile(i, **kw):
     p = {"consent": True, "invite": INVITE, "username": f"Tester{i}", "age": 22 + i, "sex": "male" if i % 2 else "female",
          "height_cm": 165 + i, "weight_kg": 60 + i, "goal": ["lose", "gain", "maintain"][i % 3],
@@ -144,6 +153,15 @@ def main():
             except Exception:
                 time.sleep(0.15)
         check("server starts", True)
+        code, ctype, page = raw_get("/app")
+        check("the phone web app is served", code == 200 and ctype.startswith("text/html") and b"Lazy Fitness" in page
+              and b"/app/manifest.webmanifest" in page, f"{code} {ctype}")
+        code, ctype, mani = raw_get("/app/manifest.webmanifest")
+        check("the web app manifest installs to the Home Screen", code == 200 and json.loads(mani)["start_url"] == "/app/", f"{code} {ctype}")
+        code, ctype, icon = raw_get("/app/icon.png")
+        check("the web app icon is a PNG", code == 200 and ctype == "image/png" and icon.startswith(b"\x89PNG"), f"{code} {ctype}")
+        check("no other file can be read through /app",
+              all(raw_get(p)[0] == 404 for p in ("/app/server.py", "/app/../server.py", "/app/index.html", "/app/%2e%2e/server.py")))
         check("wrong invite code is refused", req("POST", "/api/register", profile(0, invite="nope"))[0] == 403)
         check("missing consent is refused", req("POST", "/api/register", profile(0, consent=False))[0] == 400)
         check("bad profile is refused", req("POST", "/api/register", profile(0, age=3))[0] == 400)

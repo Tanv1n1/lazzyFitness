@@ -1,0 +1,955 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Lazy Fitness">
+<meta name="theme-color" content="#EEF1EC" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0E1714" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="/app/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/app/icon.png">
+<title>Lazy Fitness</title>
+<style>
+:root{--bg:#EEF1EC;--fg:#14201B;--card:#fff;--mut:#5C6B64;--line:#D9DFDA;--pri:#14201B;--onpri:#fff;--ok:#2F7D5B;--skip:#9B2C4B;--water:#2D7DA8;--chip:#E3E8E4;color-scheme:light}
+@media (prefers-color-scheme:dark){:root{--bg:#0E1714;--fg:#E8EFEA;--card:#16231F;--mut:#93A59C;--line:#27382F;--pri:#F2B825;--onpri:#10231D;--ok:#5DBB92;--skip:#E27A98;--water:#6BB6DE;--chip:#21332B;color-scheme:dark}}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+#root{max-width:560px;margin:0 auto;padding:env(safe-area-inset-top) 16px calc(88px + env(safe-area-inset-bottom));min-height:100vh}
+button{font:inherit;color:inherit;cursor:pointer}
+h1,h2,h3,p{margin:0}
+.mut{color:var(--mut)} .sm{font-size:13px} .xs{font-size:12px} .mono{font-family:ui-monospace,Menlo,monospace}
+.ok{color:var(--ok)} .sk{color:var(--skip)} .wt{color:var(--water)} .err{color:var(--skip)}
+.row{display:flex;align-items:center;gap:8px} .grow{flex:1;min-width:0}
+.card{background:var(--card);border-radius:12px;padding:14px}
+.stack>*+*{margin-top:12px}
+.btn{border:1px solid var(--line);background:transparent;border-radius:10px;padding:10px 14px;font-weight:600}
+.btn.pri{background:var(--pri);color:var(--onpri);border-color:var(--pri)}
+.btn.link{border:0;padding:8px 6px;font-weight:600;color:var(--water)}
+.btn[disabled]{opacity:.45}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{border:1px solid var(--line);background:transparent;border-radius:999px;padding:7px 14px}
+.chip.on{background:var(--chip);border-color:var(--fg);font-weight:600}
+.fld{display:block;margin-top:10px} .fld>span{display:block;font-size:13px;color:var(--mut);margin-bottom:4px}
+input,textarea{width:100%;font:16px/1.3 inherit;font-family:inherit;color:var(--fg);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:11px 12px}
+textarea{resize:none}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.lbl{font-size:11px;letter-spacing:1px;font-weight:700;margin-top:8px}
+.bar{height:8px;border-radius:4px;background:var(--line);overflow:hidden} .bar>i{display:block;height:100%;background:var(--ok)}
+.next{background:var(--pri);color:var(--onpri)}
+.next .lbl{color:inherit;opacity:.8} .next .btn{border-color:var(--onpri);color:var(--onpri)}
+.next .btn.pri{background:var(--onpri);color:var(--pri)} .next .btn.link{color:var(--onpri)}
+.step{display:grid;grid-template-columns:62px 34px 1fr;align-items:stretch}
+.step .t{font-size:12px;padding-top:6px;color:var(--mut)}
+.rail{display:flex;flex-direction:column;align-items:center}
+.rail .line{width:2px;flex:1;background:var(--line);margin-top:4px}
+.dot{width:26px;height:26px;border-radius:50%;border:2px solid var(--fg);background:transparent;padding:0;display:grid;place-items:center;color:#fff;font-weight:700;font-size:15px;flex:none}
+.dot.done{background:var(--ok);border-color:var(--ok)} .dot.skipped{border-color:var(--skip);color:var(--skip)} .dot.water{border-color:var(--water)}
+.step .card{margin-bottom:12px}
+.li{font-size:15px} .ex{display:flex;justify-content:space-between;gap:10px;font-size:15px}
+.tabs{position:fixed;left:0;right:0;bottom:0;display:flex;background:var(--card);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
+.tabs button{flex:1;border:0;background:none;padding:16px 0 14px;font-size:15px;color:var(--mut)}
+.tabs button.on{color:var(--fg);font-weight:700}
+.sheet{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:flex-end;justify-content:center;z-index:5}
+.sheet>div{background:var(--card);width:100%;max-width:560px;max-height:88vh;overflow:auto;border-radius:16px 16px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom))}
+.spin{width:30px;height:30px;border:3px solid var(--line);border-top-color:var(--pri);border-radius:50%;animation:s 1s linear infinite}
+.spin.sm{width:18px;height:18px;border-width:2px;flex:none}
+@keyframes s{to{transform:rotate(360deg)}}
+.stat{display:flex;justify-content:space-between;gap:10px;padding:2px 0}
+.center{min-height:80vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:6px}
+.tip{background:var(--card);border:1px dashed var(--line);border-radius:10px;padding:10px 12px;font-size:13px;color:var(--mut)}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+"use strict";
+// ============================================================================
+// Lazy Fitness for the browser. The plan engine, storage and server calls mirror the Android app,
+// so the same profile gives the same plan on both. Everything is kept on this device unless the
+// person ticks the sharing box.
+// ============================================================================
+
+const IDS = ["water", "workout", "breakfast", "mid", "lunch", "eve", "dinner", "prebed", "sleep"];
+const PASS = 6;
+
+// ---------------------------------------------------------------- dates and times
+const pad = n => String(n).padStart(2, "0");
+const iso = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const parse = s => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); };
+const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+const epochDay = d => Math.round(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 864e5);
+const dow = d => (d.getDay() + 6) % 7 + 1;                     // Monday 1 ... Sunday 7
+const hm = s => { const [h, m] = s.split(":").map(Number); return h * 60 + m; };
+const fmt = min => {
+  const m = ((min % 1440) + 1440) % 1440, h = Math.floor(m / 60);
+  return `${h % 12 === 0 ? 12 : h % 12}:${pad(m % 60)} ${h < 12 ? "AM" : "PM"}`;
+};
+const feetInches = cm => { const t = Math.round(cm / 2.54); return [Math.floor(t / 12), t % 12]; };
+const r5 = m => Math.round(m / 5) * 5;
+
+// ---------------------------------------------------------------- plan engine
+function targets(p) {
+  const bmr = 10 * p.weightKg + 6.25 * p.heightCm - 5 * p.age + (p.sex === "male" ? 5 : p.sex === "female" ? -161 : -78);
+  const adj = { lose: -400, gain: 300 }[p.goal] || 0;
+  const floor = p.sex === "female" ? 1300 : 1500;
+  const perKg = p.conds.includes("kidney") ? 0.8 : p.goal === "maintain" ? 1.2 : 1.6;
+  const h = p.heightCm / 100;
+  return {
+    kcal: Math.round(Math.max(bmr * 1.4 + adj, floor) / 10) * 10,
+    protein: Math.round(p.weightKg * perKg),
+    waterL: Math.min(4, Math.max(2, Math.round(p.weightKg * 0.035 * 10) / 10)),
+    bmi: Math.round(p.weightKg / (h * h) * 10) / 10,
+  };
+}
+
+/** Time of each step in minutes after midnight, anchored on wake time. A time past 1440 is after midnight. */
+function schedule(p) {
+  const w = hm(p.wake);
+  let s = hm(p.sleep);
+  if (s <= w) s += 1440;
+  const k = Math.min(1, ((s - w) / 60) / 16);
+  const offs = p.wtime === "morning"
+    ? [["workout", .5], ["breakfast", 1.75], ["mid", 4.25], ["lunch", 6.5], ["eve", 10]]
+    : [["breakfast", 1], ["mid", 4], ["lunch", 6.5], ["eve", 9.5], ["workout", 11]];
+  const out = new Map([["water", w]]);
+  let prev = w;
+  for (const [id, o] of offs) {
+    let t = r5(w + Math.round(o * 60 * k));
+    if (t < prev + 20) t = prev + 20;
+    out.set(id, t);
+    prev = t;
+  }
+  let dinner = r5(s - 150);
+  if (dinner < prev + 45) dinner = prev + 45;
+  out.set("dinner", dinner);
+  let pre = r5(s - 45);
+  if (pre < dinner + 45) pre = dinner + 45;
+  if (pre > s - 10) pre = Math.max(dinner + 20, s - 10);
+  out.set("prebed", pre);
+  out.set("sleep", s);
+  return out;
+}
+
+/** The date a day belongs to. A day that runs past midnight still counts as the date it started. */
+function activeDate(p, now) {
+  const sleep = schedule(p).get("sleep") || 1380;
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return sleep > 1440 && now.getHours() * 60 + now.getMinutes() < sleep - 1440 + 60 ? addDays(today, -1) : today;
+}
+
+const CONDITIONS = [
+  ["diabetes", "Diabetes"], ["thyroid", "Thyroid"], ["pcos", "PCOS / PCOD"], ["bp", "High BP"],
+  ["chol", "High cholesterol"], ["acidity", "Acidity / GERD"], ["lactose", "Lactose intolerance"],
+  ["gluten", "Gluten sensitivity"], ["kidney", "Kidney issue"],
+];
+const NOTES = {
+  diabetes: "Spread carbs across meals, pick bhakri over rice and do not skip meals. Share this plan with your doctor.",
+  thyroid: "If you take thyroid medicine, take it with water 30 to 45 minutes before breakfast, as your doctor advised. Keep soy and raw cabbage or cauliflower modest.",
+  pcos: "Lean on high-protein, low-sugar meals and strength training. Avoid long gaps between meals.",
+  bp: "Cut added salt. Papad, pickle, farsan and packaged namkeen are the usual culprits.",
+  chol: "Keep fried food, bakery items and red meat low. Add oats, sprouts, methi and nuts.",
+  acidity: "Eat on time, avoid strong tea or coffee on an empty stomach, finish dinner 3 hours before bed.",
+  lactose: "Dairy is swapped out across the plan. For calcium use ragi, til and leafy greens.",
+  gluten: "Bhakri (jowar, bajra, ragi), rice and besan replace wheat, rava and pav.",
+  kidney: "Protein and fluid needs depend on your kidney stage. Treat this plan as a draft and confirm it with your nephrologist before following it.",
+};
+const EXCLUDE = {
+  diabetes: ["highgi", "sugar"], pcos: ["highgi", "sugar"], bp: ["highsalt"], chol: ["fried"], acidity: ["spicy"],
+  lactose: ["dairy"], gluten: ["gluten"], thyroid: ["soy"], kidney: ["highsalt"],
+};
+
+// Pune meal library: name, items, diet (veg | egg | nonveg), tags that a health condition can exclude
+const o = (n, i, d = "veg", ...t) => ({ n, i, d, t });
+const LIB = {
+  breakfast: [
+    o("Kanda poha with peanuts", ["1 plate poha, light oil", "2 tbsp roasted peanuts", "1 glass taak"], "veg", "dairy", "highgi"),
+    o("Jowar thalipeeth", ["2 jowar thalipeeth", "Fresh curd, 1 small bowl", "1 fruit"], "veg", "dairy"),
+    o("Moong dal cheela", ["2 moong cheela with veggies", "Mint chutney", "1 fruit (guava or papaya)"]),
+    o("Besan chilla", ["2 besan chilla with onion, tomato", "Coriander chutney", "Handful of sprouts"]),
+    o("Ragi dosa", ["2 ragi dosa", "Coconut chutney", "Sambar, 1 small bowl"]),
+    o("Egg bhurji and bhakri", ["2 egg bhurji, less oil", "1 jowar bhakri", "1 fruit"], "egg"),
+    o("Masala omelette", ["2-egg masala omelette", "2 slices multigrain toast", "Cucumber slices"], "egg", "gluten"),
+  ],
+  mid: [
+    o("Fruit and almonds", ["1 seasonal fruit (guava, apple, papaya)", "6 almonds"]),
+    o("Roasted chana", ["A fistful of roasted chana", "1 glass coconut water"]),
+    o("Taak and cucumber", ["1 glass taak with jeera", "Cucumber slices"], "veg", "dairy"),
+    o("Sprouts chaat", ["1 bowl sprouts, onion, tomato, lemon"]),
+    o("Boiled eggs", ["2 boiled eggs", "Black pepper"], "egg"),
+  ],
+  lunch: [
+    o("Bhakri, varan, bhaji", ["2 jowar or bajra bhakri", "1 bowl varan (dal)", "1 bowl seasonal bhaji", "Kachumber salad"]),
+    o("Dal-palak thali", ["2 bhakri", "Dal palak, 1 bowl", "Carrot-cucumber salad", "Sol kadhi, 1 glass"]),
+    o("Matki usal meal", ["1 bowl matki usal", "2 bhakri", "Salad", "Sol kadhi"]),
+    o("Paneer bhurji and phulka", ["2 phulka", "Paneer bhurji, 1 bowl", "Dal, 1 small bowl", "Salad"], "veg", "dairy", "gluten"),
+    o("Amti and rice", ["1 small bowl rice", "Amti, 1 bowl", "Usal, 1 bowl", "Salad"], "veg", "highgi"),
+    o("Mild chicken sukka", ["2 bhakri", "Chicken sukka, 150 g, less oil", "Kachumber salad"], "nonveg", "spicy"),
+    o("Grilled fish thali", ["Grilled fish, 150 g", "1 small bowl rice", "Sol kadhi", "Salad"], "nonveg", "highgi"),
+    o("Egg curry and bhakri", ["2-egg curry, light gravy", "2 bhakri", "Salad"], "egg", "spicy"),
+  ],
+  eve: [
+    o("Makhana and tea", ["A fistful of roasted makhana", "1 cup tea, low sugar"]),
+    o("Roasted chana chaat", ["1 small bowl chana, onion, lemon"]),
+    o("Fruit and peanuts", ["1 fruit", "A small handful of peanuts"]),
+    o("Boiled corn", ["1 boiled corn with lemon and pepper"]),
+    o("Boiled eggs and cucumber", ["2 boiled eggs", "Cucumber"], "egg"),
+    o("Grilled chicken tikka", ["4 pieces grilled chicken tikka", "Mint chutney"], "nonveg", "spicy"),
+  ],
+  dinner: [
+    o("Dal, bhakri and greens", ["1 bowl dal", "1 bhakri", "Sauteed palak or methi", "Salad"]),
+    o("Moong khichdi", ["1 bowl moong dal khichdi", "1 tsp ghee", "Kadhi, 1 small bowl"], "veg", "highgi", "dairy"),
+    o("Paneer and sauteed veg", ["Grilled paneer, 100 g", "Sauteed veggies", "1 phulka"], "veg", "dairy", "gluten"),
+    o("Tofu stir-fry", ["Tofu, 100 g, stir-fried", "Mixed veggies", "1 bhakri"], "veg", "soy"),
+    o("Lauki-chana dal", ["Lauki-chana dal, 1 bowl", "1 bhakri", "Salad"]),
+    o("Chicken soup and veg", ["Clear chicken soup", "Grilled chicken, 120 g", "Sauteed veggies"], "nonveg"),
+    o("Egg bhurji and bhakri", ["2 egg bhurji", "1 bhakri", "Salad"], "egg"),
+  ],
+  prebed: [
+    o("Haldi milk", ["1 cup warm haldi milk, no sugar"], "veg", "dairy"),
+    o("Jeera water and almonds", ["Warm jeera or ajwain water", "4 soaked almonds"]),
+  ],
+};
+
+// Pune things to skip, per slot. An entry with a condition shows first when it applies. "|" means any of.
+const SKIP = {
+  breakfast: [
+    ["Fruit juice, jam bread, sweet shrikhand", "diabetes|pcos"],
+    ["Misal pav with extra tarri and farsan", "acidity|chol"],
+    ["Pickle, papad and extra salt on the side", "bp"],
+    ["Pav, bread and maida snacks", "gluten"],
+    ["Milk chai, curd, paneer at the table", "lactose"],
+    ["Vada pav, kanda bhaji or bun maska from the stall near office", ""],
+    ["Sugary chai with khari or Marie biscuits", ""],
+  ],
+  mid: [
+    ["Cold drinks, packaged juice, sugarcane juice", "diabetes|pcos"],
+    ["Samosa and kachori from the tapri", "chol"],
+    ["Strong tea or coffee on an empty stomach", "acidity"],
+    ["Salted chips and salty roasted nuts", "bp"],
+    ["Bakarwadi, chakli, namkeen packets", ""],
+  ],
+  lunch: [
+    ["Big portions of white rice", "diabetes|pcos"],
+    ["Extra tarri, red-oil curries, pickle, papad", "acidity|bp"],
+    ["Deep-fried sides: bhajji, fried papad, kheema pav", "chol"],
+    ["Wheat roti and pav, use bhakri instead", "gluten"],
+    ["Raita, lassi and paneer dishes", "lactose"],
+    ["Unlimited thali refills of rice and sweets", ""],
+    ["Misal pav, vada pav or biryani as a quick lunch", ""],
+  ],
+  eve: [
+    ["Sugary chai, cold coffee, packaged juice", "diabetes|pcos"],
+    ["Fried snacks: samosa, kachori, batata vada", "chol"],
+    ["Extra chaat masala and salt", "bp"],
+    ["Mastani, milkshake, Irani cafe bun maska", ""],
+    ["Pani puri, sev puri, ragda pattice", ""],
+  ],
+  dinner: [
+    ["White rice or khichdi in large portions", "diabetes|pcos"],
+    ["Spicy Kolhapuri or misal-type dinner", "acidity"],
+    ["Pickles, papad and packet soups", "bp"],
+    ["Red meat and fried non-veg", "chol"],
+    ["Late biryani, Chinese bhel or fried rice after 9 pm", ""],
+    ["Sweet after dinner: shrikhand, gulab jamun, ice cream", ""],
+  ],
+  prebed: [
+    ["Milk, if it upsets your stomach", "lactose"],
+    ["Biscuits, chocolate or mithai late at night", ""],
+    ["Tea or coffee after 6 pm, it hurts sleep", ""],
+  ],
+};
+const SHARE = { breakfast: 24, mid: 8, lunch: 32, eve: 10, dinner: 22, prebed: 4 };
+const SLOT_TITLE = { breakfast: "Breakfast", mid: "Mid-morning snack", lunch: "Lunch", eve: "Evening snack", dinner: "Dinner", prebed: "Before bed" };
+const STEP_NAMES = { ...SLOT_TITLE, water: "Morning water", workout: "Workout", sleep: "Sleep on time" };
+
+const skipFor = (slot, p) => {
+  const all = SKIP[slot] || [];
+  const specific = all.filter(([, c]) => c && c.split("|").some(x => p.conds.includes(x))).map(x => x[0]);
+  const generic = all.filter(([, c]) => !c).map(x => x[0]);
+  return [...specific, ...generic].slice(0, 3);
+};
+const dietOk = (d, diet) => diet === "veg" ? d === "veg" : diet === "egg" ? d === "veg" || d === "egg" : true;
+
+/** The offline planner. Always works, no network. */
+function localPlan(p) {
+  const excluded = new Set(p.conds.flatMap(c => EXCLUDE[c] || []));
+  const meals = {};
+  for (const [slot, opts] of Object.entries(LIB)) {
+    const ok = opts.filter(x => dietOk(x.d, p.diet) && !x.t.some(t => excluded.has(t)));
+    const pool = ok.length ? ok : opts.filter(x => dietOk(x.d, p.diet)).slice(0, 1);
+    const skip = skipFor(slot, p);
+    meals[slot] = pool.map(x => ({ name: x.n, items: x.i, skip }));
+  }
+  const t = targets(p);
+  const goalText = { lose: "lose fat steadily", gain: "build muscle" }[p.goal] || "hold your weight";
+  const allSkips = Object.values(SKIP).flat();
+  const watch = [...new Set([
+    ...p.conds.flatMap(c => allSkips.filter(([, k]) => k.split("|").includes(c)).map(x => x[0])),
+    ...allSkips.filter(([, k]) => !k).map(x => x[0]),
+  ])].slice(0, 6);
+  return { source: "local", summary: `About ${t.kcal} kcal and ${t.protein} g protein a day to ${goalText}.`, watchlist: watch, meals };
+}
+
+const EX = {
+  full: {
+    home: [["Bodyweight squats", "3 x 15"], ["Push-ups (knees ok)", "3 x 10"], ["Backpack rows", "3 x 12"], ["Glute bridges", "3 x 15"], ["Plank", "3 x 30 s"]],
+    gym: [["Goblet squat", "3 x 12"], ["Dumbbell bench press", "3 x 10"], ["Seated cable row", "3 x 12"], ["Romanian deadlift", "3 x 10"], ["Plank", "3 x 40 s"]],
+  },
+  push: {
+    home: [["Push-ups", "4 x 10"], ["Pike push-ups", "3 x 8"], ["Chair dips", "3 x 12"], ["Plank shoulder taps", "3 x 20"]],
+    gym: [["Dumbbell bench press", "4 x 8"], ["Overhead press", "3 x 10"], ["Incline press", "3 x 10"], ["Triceps pushdown", "3 x 12"]],
+  },
+  pull: {
+    home: [["Backpack rows", "4 x 12"], ["Superman hold", "3 x 30 s"], ["Towel curls", "3 x 12"], ["Dead bug", "3 x 12"]],
+    gym: [["Lat pulldown", "4 x 10"], ["Seated cable row", "3 x 10"], ["Face pull", "3 x 15"], ["Dumbbell curl", "3 x 12"]],
+  },
+  legs: {
+    home: [["Squats", "4 x 15"], ["Reverse lunges", "3 x 12 each"], ["Glute bridges", "4 x 15"], ["Calf raises", "3 x 20"]],
+    gym: [["Back squat or leg press", "4 x 10"], ["Romanian deadlift", "3 x 10"], ["Walking lunges", "3 x 12 each"], ["Calf raises", "3 x 15"]],
+  },
+  walk: {
+    home: [["Brisk walk", "30 min, can talk but not sing"], ["Stretch", "5 min"]],
+    gym: [["Brisk walk or cycle", "30 min, can talk but not sing"], ["Stretch", "5 min"]],
+  },
+  rest: {
+    home: [["Easy stretch or yoga", "15 min"], ["Slow walk", "15 min"]],
+    gym: [["Easy stretch or yoga", "15 min"], ["Slow walk", "15 min"]],
+  },
+};
+const WEEK = {
+  lose: ["full", "walk", "full", "walk", "full", "walk", "rest"],
+  gain: ["push", "legs", "walk", "pull", "legs", "full", "rest"],
+  maintain: ["full", "walk", "full", "rest", "full", "walk", "rest"],
+};
+const WTITLE = { full: "Full body strength", push: "Push day", pull: "Pull day", legs: "Leg day", walk: "Cardio walk", rest: "Active rest" };
+
+function workoutFor(p, date) {
+  const key = WEEK[p.goal][dow(date) - 1];
+  const ex = EX[key][p.place].map(x => [...x]);
+  if (key === "walk" && dow(date) === 6) ex.unshift(["Weekend option", "Vetal Tekdi or a hill walk with friends"]);
+  const notes = [];
+  if (p.conds.includes("bp")) notes.push("Breathe out on effort, never hold your breath, skip max lifts.");
+  if (p.conds.includes("diabetes")) notes.push("Carry a quick sugar source. Stop and eat if you feel dizzy.");
+  if (p.conds.includes("acidity")) notes.push("Wait 90 minutes after a big meal.");
+  if (p.conds.includes("kidney")) notes.push("Keep intensity easy until your doctor clears it.");
+  return { id: "workout", kind: "workout", timeMin: 0, title: WTITLE[key], name: (key === "rest" ? 30 : 40) + " min", exercises: ex, note: notes.join(" ") || null };
+}
+
+/** One day as a list of steps. [swaps] says how many times a slot's meal was swapped, which moves it along the pool. */
+function dayPlan(p, plan, date, swaps) {
+  const sch = schedule(p), t = targets(p), idx = epochDay(date), steps = [];
+  let waterNote = "";
+  if (p.conds.includes("kidney")) waterNote += "Follow the fluid limit your doctor gave you. ";
+  if (p.conds.includes("thyroid")) waterNote += "Thyroid tablet? Take it with this water, as your doctor advised. ";
+  waterNote += "Before tea, before your phone.";
+  steps.push({ id: "water", kind: "water", timeMin: sch.get("water"), title: "Drink 400 ml of water", note: waterNote.trim(),
+    name: `Daily target about ${t.waterL.toFixed(1)} L`, eat: [], skip: [], exercises: [] });
+  for (const [slot, time] of sch) {
+    if (slot === "water") continue;
+    if (slot === "workout") {
+      steps.push({ eat: [], skip: [], ...workoutFor(p, date), timeMin: time });
+    } else if (slot === "sleep") {
+      steps.push({ id: "sleep", kind: "sleep", timeMin: time, title: "In bed, lights out", eat: [], skip: [], exercises: [],
+        note: "Screens down 20 minutes before. Aim for the same time every night." });
+    } else {
+      const own = (plan.meals[slot] || []);
+      const pool = own.length ? own : localPlan(p).meals[slot];
+      const n = pool.length, m = pool[(((idx + IDS.indexOf(slot) + swaps(slot)) % n) + n) % n];
+      const kcal = Math.round((t.kcal * (SHARE[slot] || 0) / 100) / 10) * 10;
+      steps.push({ id: slot, kind: "meal", timeMin: time, title: SLOT_TITLE[slot], kcal, name: m.name, eat: m.items, skip: m.skip, exercises: [] });
+    }
+  }
+  return steps.sort((a, b) => a.timeMin - b.timeMin);
+}
+
+const healthNotes = p => p.conds.map(c => NOTES[c]).filter(Boolean);
+const glassTarget = t => Math.min(16, Math.max(6, Math.round(t.waterL * 1000 / 250)));
+
+// ---------------------------------------------------------------- storage (one JSON blob in localStorage)
+let S = (() => { try { return JSON.parse(localStorage.getItem("lf")) || {}; } catch { return {}; } })();
+const save = () => { try { localStorage.setItem("lf", JSON.stringify(S)); } catch { /* private mode: it just will not be remembered */ } };
+const slot = (key, date) => ((S[key] ??= {})[date] ??= {});
+const done = date => new Set((S.log || {})[date] || []);
+const water = date => (S.water || {})[date] || 0;
+const swaps = (date, id) => (S.swaps || {})[`${date}_${id}`] || 0;
+const entries = date => (S.entries || {})[date] || {};
+const revs = date => (S.revs || {})[date] || {};
+
+function setDone(date, id, on) {
+  const cur = done(date);
+  on ? cur.add(id) : cur.delete(id);
+  (S.log ??= {})[date] = IDS.filter(x => cur.has(x));
+}
+function setEntry(date, id, e) { e ? slot("entries", date)[id] = e : delete slot("entries", date)[id]; }
+function setRev(date, id, r) { r ? slot("revs", date)[id] = r : delete slot("revs", date)[id]; }
+
+const revised = (s, r) => !r ? s : {
+  ...s, title: r.title ?? s.title, name: r.name ?? s.name, eat: r.eat ?? s.eat, skip: r.skip ?? s.skip,
+  kcal: r.kcal ?? s.kcal, exercises: r.exercises ?? s.exercises, note: r.note ?? s.note,
+};
+/** The day as the person sees it: the plan, with meal swaps and AI rewrites applied. */
+const daySteps = date => dayPlan(S.profile, S.plan || localPlan(S.profile), parse(date), id => swaps(date, id))
+  .map(s => revised(s, revs(date)[s.id]));
+
+const counts = () => Object.fromEntries(Object.entries(S.log || {}).map(([d, v]) => [d, v.length]));
+function streak(today) {
+  const c = counts();
+  let d = parse(today);
+  if ((c[iso(d)] || 0) < PASS) d = addDays(d, -1);
+  let n = 0;
+  while ((c[iso(d)] || 0) >= PASS) { n++; d = addDays(d, -1); }
+  return n;
+}
+function week(today) {
+  const c = counts(), days = [0, 1, 2, 3, 4, 5, 6].map(i => iso(addDays(parse(today), -i)));
+  const skipped = days.flatMap(d => Object.entries(entries(d)).filter(([, e]) => e.s === "skipped").map(([id]) => id));
+  const tally = {};
+  skipped.forEach(id => tally[id] = (tally[id] || 0) + 1);
+  const most = Object.entries(tally).sort((a, b) => b[1] - a[1])[0];
+  return {
+    daysLogged: days.filter(d => (c[d] || 0) > 0).length,
+    avgPct: Math.round(100 * days.reduce((a, d) => a + (c[d] || 0), 0) / (7 * IDS.length)),
+    skipped: skipped.length,
+    replaced: days.reduce((a, d) => a + Object.values(entries(d)).filter(e => e.s === "replaced").length, 0),
+    mostSkipped: most ? most[0] : null,
+  };
+}
+
+// ---------------------------------------------------------------- server calls (the backend that serves this page)
+async function call(method, path, body, timeoutMs = 15000) {
+  const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), timeoutMs);
+  try {
+    const headers = { "Content-Type": "application/json" };
+    if (S.userId) headers["X-User-Id"] = S.userId;
+    if (S.userKey) headers["X-User-Key"] = S.userKey;
+    const r = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : undefined, signal: ctl.signal });
+    return { code: r.status, body: await r.text() };
+  } finally { clearTimeout(timer); }
+}
+const json = text => { try { return JSON.parse(text); } catch { return {}; } };
+
+const profileJson = p => ({
+  username: p.username, age: p.age, sex: p.sex, height_cm: p.heightCm, weight_kg: p.weightKg, goal: p.goal, diet: p.diet,
+  place: p.place, wtime: p.wtime, wake: p.wake, sleep: p.sleep, conds: p.conds, other: p.other,
+});
+const aiProfile = p => {                                    // no username: the AI provider only needs stats, goal, diet and health flags
+  const { username, ...rest } = profileJson(p), t = targets(p);
+  return { ...rest, targets: { kcal: t.kcal, protein: t.protein } };
+};
+
+/** Creates the account on first use, otherwise updates the profile. True on success. */
+async function pushProfile(planSource) {
+  try {
+    const p = S.profile, t = targets(p);
+    if (!S.consent) return false;
+    const { other, ...base } = profileJson(p);
+    const body = { ...base, conds: other ? [...p.conds, "other"] : p.conds, kcal: t.kcal, protein: t.protein, plan_source: planSource };
+    if (!S.userId) {
+      const r = await call("POST", "/api/register", { ...body, consent: true, invite: S.invite });
+      if (r.code !== 200) {
+        const msg = json(r.body).error || `Server said no (${r.code})`;
+        S.syncNote = msg[0].toUpperCase() + msg.slice(1); save();
+        return false;
+      }
+      const j = json(r.body);
+      S.userId = j.user_id; S.userKey = j.user_key; S.syncNote = ""; save();
+      return true;
+    }
+    return (await call("POST", "/api/profile", body)).code === 200;
+  } catch {
+    S.syncNote = "Could not reach the server. Your ticks are saved and will upload later."; save();
+    return false;
+  }
+}
+
+async function syncDay(date) {
+  if (!S.consent || !S.userId) return;
+  try {
+    const r = await call("POST", "/api/sync", { day: date, done: [...done(date)], entries: entries(date), water: water(date) });
+    S.syncNote = r.code === 200 ? "" : `Server said no (${r.code})`;
+  } catch {
+    S.syncNote = "Could not reach the server. Your ticks are saved and will upload later.";
+  }
+  save();
+}
+function syncRecent() {
+  const d = iso(activeDate(S.profile, new Date()));
+  [d, iso(addDays(parse(d), -1))].filter(x => S.log?.[x] || S.entries?.[x] || S.water?.[x]).forEach(syncDay);   // not days with nothing to say
+}
+
+/** What to tell the person when an AI route did not answer 200. */
+const aiFailure = (code, body) =>
+  code === 429 && body.includes("ai_busy") ? "The AI is busy right now. Try again in a minute."
+  : code === 429 ? "You have used today's AI help. Try again tomorrow."
+  : code === 503 && body.includes("not configured") ? "AI is not switched on for this server yet."
+  : code === 503 && body.includes("refused") ? "The AI service is not answering right now, and the server owner needs to look at it. Try again later."
+  : code === 503 ? "The AI is not available right now. Try again in a minute."
+  : json(body).error || "The AI could not do that.";
+
+const needsSharing = "Turn on sharing under Me, Edit profile, so the AI can help.";
+
+/** One call to an AI route: the parsed reply, or { error } in words for the person. */
+async function ai(path, body, ms) {
+  if (!S.consent || !S.userId) return { error: needsSharing };
+  try {
+    const r = await call("POST", path, body, ms);
+    return r.code === 200 ? json(r.body) : { error: aiFailure(r.code, r.body) };
+  } catch { return { error: "Could not reach the server." }; }
+}
+
+async function readMeal(b64) {
+  const j = await ai("/api/meal-photo", { image: b64 }, 120000);
+  return j.error ? j : { items: j.items || [], kcal: Number.isFinite(j.kcal) ? j.kcal : null, note: j.note || "" };
+}
+
+/**
+ * Asks the AI about one step. mode "change" rewrites the step to match the request; "skipped" (request is the reason)
+ * and "replaced" (request is what was eaten instead) return a tip, and for "replaced" the calories.
+ */
+async function stepAi(mode, step, request) {
+  if (!S.profile) return { error: "Set up your profile first." };
+  const stepBody = { id: step.id, kind: step.kind, title: step.title, name: step.name || "", eat: step.eat, skip: step.skip, exercises: step.exercises };
+  if (step.kind === "meal" && step.kcal != null) stepBody.kcal = step.kcal;
+  const j = await ai("/api/step-ai", { mode, request, step: stepBody, profile: aiProfile(S.profile) }, 150000);
+  return j.error ? j : { revision: j.revision || null, kcal: Number.isFinite(j.kcal) ? j.kcal : null, tip: j.tip || "" };
+}
+
+async function aiPlan() {
+  const j = await ai("/api/plan", { profile: aiProfile(S.profile) }, 100000);      // the same 100 s limit the Android app uses
+  return j.error ? null : { ...j, source: "ai" };
+}
+
+async function deleteAccount() {
+  if (!S.userId) return true;
+  try { return [200, 401].includes((await call("DELETE", "/api/me")).code); } catch { return false; }
+}
+
+// ---------------------------------------------------------------- actions
+function markDone(date, id, on) {
+  setDone(date, id, on);
+  const e = entries(date)[id];
+  if (e && e.s !== "note") setEntry(date, id, e.note ? { s: "note", text: "", note: e.note, tip: "" } : null);
+  save(); syncDay(date);
+}
+function addWater(date, delta) {
+  (S.water ??= {})[date] = Math.max(0, Math.min(40, water(date) + delta));
+  save(); syncDay(date);
+}
+function swapMeal(date, id) {
+  (S.swaps ??= {})[`${date}_${id}`] = swaps(date, id) + 1;
+  setRev(date, id, null);                                    // a rewrite belonged to the meal that was just swapped out
+  save();
+}
+/** After a meal is skipped or swapped the AI adds a short tip and, for a swap, the calories. Quiet: the skip or swap is already saved. */
+async function coach(date, id) {
+  const step = daySteps(date).find(s => s.id === id && s.kind === "meal"), entry = entries(date)[id];
+  if (!step || !entry || !["skipped", "replaced"].includes(entry.s)) return;
+  const r = await stepAi(entry.s === "replaced" ? "replaced" : "skipped", step, entry.text);
+  const now = entries(date)[id];
+  if (r.error || !now || now.s !== entry.s) return;
+  const next = { ...now, tip: r.tip };
+  if (now.kcal == null && r.kcal != null) next.kcal = r.kcal;
+  setEntry(date, id, next); save(); syncDay(date); render();
+}
+
+// ---------------------------------------------------------------- tiny DOM helper (text is always set as text, never as HTML)
+function h(tag, attrs, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (k.startsWith("on")) e.addEventListener(k.slice(2), v);
+    else if (k === "class") e.className = v;
+    else if (v === true) e.setAttribute(k, "");
+    else if (v !== false && v != null) e.setAttribute(k, v);
+  }
+  for (const c of kids.flat(Infinity)) if (c != null && c !== false) e.append(c.nodeType ? c : String(c));
+  return e;
+}
+const chips = (opts, sel, on) => h("div", { class: "chips" },
+  opts.map(([id, label]) => h("button", { type: "button", class: "chip" + (sel.has(id) ? " on" : ""), onclick: () => on(id) }, label)));
+const label = (t) => h("div", { class: "sm mut", style: "margin:14px 0 6px" }, t);
+const iosBrowser = (/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1))
+  && !(navigator.standalone || matchMedia("(display-mode: standalone)").matches);
+const addToHome = () => iosBrowser && h("div", { class: "tip", style: "margin-top:12px" },
+  "On iPhone: tap the Share button, choose Add to Home Screen, then open Lazy Fitness from your Home Screen and sign up there. " +
+  "The Home Screen app keeps its own data, separate from Safari.");
+
+// ---------------------------------------------------------------- screens
+let screen = S.profile ? "main" : "onboard", tab = 0, F = null, dlg = null, buildId = 0;
+const expanded = new Set();
+const root = document.getElementById("root");
+
+function render() {
+  const y = window.scrollY;
+  root.replaceChildren(screen === "onboard" ? onboardView() : screen === "building" ? buildingView() : mainView());
+  window.scrollTo(0, y);
+}
+
+// ---- onboarding: three short steps
+function startOnboarding() {
+  const p = S.profile, [ft, inch] = p ? feetInches(p.heightCm) : ["", ""];
+  F = {
+    step: 0, error: "", username: p?.username || "", age: p ? String(p.age) : "", feet: String(ft), inches: String(inch),
+    weight: p ? String(p.weightKg) : "", sex: p?.sex || "", wake: p?.wake || "06:30", sleep: p?.sleep || "23:00",
+    diet: p?.diet || "", place: p?.place || "home", wtime: p?.wtime || "evening", goal: p?.goal || "",
+    conds: new Set(p?.conds || []), other: p?.other || "", consent: !!S.consent, invite: S.invite || "",
+  };
+  screen = "onboard"; render();
+}
+const heightCm = f => ((+f.feet || 0) * 12 + (+f.inches || 0)) * 2.54;
+
+function validate(f) {
+  if (f.step === 0) {
+    if (f.username.trim().length < 2 || f.username.trim().length > 24) return "Pick a username with 2 to 24 characters.";
+    if (!(+f.age >= 16 && +f.age <= 80)) return "Age should be between 16 and 80.";
+    if (f.feet === "" || (f.inches !== "" && +f.inches > 11)) return "Enter your height as feet and inches, for example 5 and 7.";
+    if (heightCm(f) < 120 || heightCm(f) > 230) return "Height should be between about 4 ft and 7 ft 6 in.";
+    if (!(+f.weight >= 30 && +f.weight <= 250)) return "Weight should be in kg, between 30 and 250.";
+    if (!f.sex) return "Choose one option for sex. It is only used for the calorie estimate.";
+  }
+  if (f.step === 1) {
+    if (!f.wake || !f.sleep) return "Pick your wake-up and sleep times.";
+    if (!f.diet) return "Choose what you eat.";
+  }
+  if (f.step === 2) {
+    if (!f.goal) return "Choose a goal.";
+    if (f.consent && !f.invite.trim()) return "Enter the invite code you were given.";
+  }
+  return "";
+}
+
+function onboardView() {
+  const f = F;
+  const inp = (text, key, { type = "text", mode, max = 40, re } = {}) => h("label", { class: "fld" }, h("span", {}, text),
+    h("input", { type, inputmode: mode, value: f[key], maxlength: max, autocomplete: "off",
+      oninput: e => { if (re) e.target.value = e.target.value.replace(re, ""); f[key] = e.target.value; } }));
+  const set = (key) => (v) => { f[key] = v; render(); };
+  let body;
+  if (f.step === 0) body = [
+    h("h2", {}, "About you"),
+    inp("Username", "username", { max: 24 }),
+    h("div", { class: "two" }, inp("Age", "age", { mode: "numeric", max: 2, re: /\D/g }), inp("Weight kg", "weight", { mode: "decimal", max: 5, re: /[^\d.]/g })),
+    h("div", { class: "two" }, inp("Height ft", "feet", { mode: "numeric", max: 1, re: /\D/g }), inp("Height in", "inches", { mode: "numeric", max: 2, re: /\D/g })),
+    label("Sex (for the calorie estimate)"),
+    chips([["male", "Male"], ["female", "Female"], ["other", "Prefer not to say"]], new Set([f.sex]), set("sex")),
+    addToHome(),
+  ];
+  else if (f.step === 1) body = [
+    h("h2", {}, "Your day"),
+    h("p", { class: "mut", style: "margin-top:4px" }, "No fixed schedule is fine. Your timeline starts the moment you wake up."),
+    inp("Wake up", "wake", { type: "time" }), inp("Sleep", "sleep", { type: "time" }),
+    label("What do you eat?"),
+    chips([["veg", "Vegetarian"], ["egg", "Eggetarian"], ["nonveg", "Non-veg"]], new Set([f.diet]), set("diet")),
+    label("Where do you train?"),
+    chips([["home", "At home"], ["gym", "Gym"]], new Set([f.place]), set("place")),
+    label("When do you prefer to train?"),
+    chips([["morning", "Morning"], ["evening", "Evening"]], new Set([f.wtime]), set("wtime")),
+  ];
+  else body = [
+    h("h2", {}, "Goal and health"),
+    label("Your goal"),
+    chips([["lose", "Lose fat"], ["gain", "Build muscle"], ["maintain", "Stay where I am"]], new Set([f.goal]), set("goal")),
+    label("Any medical issue that affects diet? (optional)"),
+    chips(CONDITIONS, f.conds, c => { f.conds.has(c) ? f.conds.delete(c) : f.conds.add(c); render(); }),
+    inp("Anything else, like a food allergy", "other", { max: 80 }),
+    h("label", { class: "row", style: "margin-top:16px;align-items:flex-start" },
+      h("input", { type: "checkbox", checked: f.consent, style: "width:22px;height:22px;margin-top:2px;flex:none", onchange: e => { f.consent = e.target.checked; render(); } }),
+      h("div", {}, h("div", { style: "font-weight:600" }, "Share my profile and daily check-ins with my coach dashboard"),
+        h("div", { class: "xs mut", style: "margin-top:4px" },
+          "Your username, body stats, goal, medical flags and ticks are sent to the Lazy Fitness server. " +
+          "To write your meal plan, the server also sends your age, sex, height, weight, goal, diet, medical flags and any note you typed, " +
+          "but never your username, to a third-party AI service. A meal photo you choose to analyse goes to the same service and is not saved. " +
+          "Skipped steps, what you ate instead and your change requests are shared with your coach. " +
+          "Leave this off and everything stays on your phone, with the offline planner. " +
+          "You can delete your data from the Me tab, but not what the AI service has already received."))),
+    f.consent && inp("Invite code", "invite", { max: 40 }),
+    f.consent && h("p", { class: "xs mut", style: "margin-top:4px" }, "It comes from the person running the test."),
+  ];
+  return h("div", { style: "padding-top:24px" },
+    h("h1", { style: "font-weight:800;font-size:26px" }, "Lazy Fitness"),
+    h("p", { class: "mut" }, `Step ${f.step + 1} of 3`),
+    h("div", { class: "bar", style: "margin:10px 0 6px" }, h("i", { style: `width:${(f.step + 1) / 3 * 100}%;background:var(--pri)` })),
+    h("div", {}, body),
+    f.error && h("p", { class: "err", style: "margin-top:12px" }, f.error),
+    h("div", { class: "row", style: "margin-top:18px" },
+      f.step > 0 && h("button", { class: "btn link", onclick: () => { f.step--; f.error = ""; render(); } }, "Back"),
+      h("div", { class: "grow" }),
+      h("button", { class: "btn pri", onclick: () => {
+        f.error = validate(f);
+        if (f.error) return render();
+        if (f.step < 2) { f.step++; return render(); }
+        S.profile = { username: f.username.trim(), age: +f.age, sex: f.sex, heightCm: heightCm(f), weightKg: +f.weight, goal: f.goal,
+          diet: f.diet, place: f.place, wtime: f.wtime, wake: f.wake, sleep: f.sleep, conds: [...f.conds], other: f.other.trim() };
+        S.consent = f.consent; S.invite = f.invite.trim(); save();
+        startBuild();
+      } }, f.step < 2 ? "Next" : "Build my plan")));
+}
+
+// ---- building the plan: with sharing on the server asks the AI, otherwise (or on any failure) the offline planner is used
+async function startBuild() {
+  const id = ++buildId;
+  screen = "building"; render();
+  const plan = S.consent && (await pushProfile("local")) ? await aiPlan() : null;
+  if (id !== buildId) return;                                // the person chose the quick plan meanwhile
+  finishBuild(plan || localPlan(S.profile));
+  if (plan) pushProfile("ai");
+}
+function finishBuild(plan) {
+  buildId++;
+  S.plan = plan; save();
+  if (S.consent) syncRecent();
+  screen = "main"; tab = 0; render();
+}
+function buildingView() {
+  return h("div", { class: "center" },
+    h("div", { class: "spin" }), h("h2", { style: "margin-top:14px" }, "Building your plan"),
+    h("p", { class: "mut" }, "Counting calories and picking Pune-friendly meals"),
+    S.consent && h("p", { class: "xs mut", style: "margin-top:16px" }, "Asking the AI for meals that fit you. This can take up to a minute."),
+    S.consent && h("button", { class: "btn link", onclick: () => finishBuild(localPlan(S.profile)) }, "Use the quick plan now"));
+}
+
+// ---- main shell
+function mainView() {
+  const tabBtn = (i, text) => h("button", { class: tab === i ? "on" : "", onclick: () => { tab = i; render(); window.scrollTo(0, 0); } }, text);
+  const bar = h("div", { class: "tabs" }, tabBtn(0, "Today"), tabBtn(1, "Me"));
+  return h("div", {}, tab === 0 ? todayView() : meView(), bar, dlg && dialogView());
+}
+
+function detail(s) {
+  const kids = [];
+  if (s.kind === "meal") {
+    kids.push(h("div", { class: "lbl ok" }, "EAT"), s.eat.map(x => h("div", { class: "li" }, "•  " + x)));
+    if (s.skip.length) kids.push(h("div", { class: "lbl sk" }, "SKIP"), s.skip.map(x => h("div", { class: "li" }, "•  " + x)));
+  }
+  if (s.kind === "workout") kids.push(s.exercises.map(([n, d]) => h("div", { class: "ex" }, h("span", {}, n), h("span", { class: "mono sm" }, d))));
+  if (s.kind !== "meal" && s.note) kids.push(h("p", { class: "sm", style: "margin-top:4px;opacity:.85" }, s.note));
+  return h("div", { style: "margin-top:6px" }, kids);
+}
+
+function todayView() {
+  const p = S.profile, t = targets(p), now = new Date(), date = iso(activeDate(p, now));
+  const steps = daySteps(date), dn = done(date), ents = entries(date), rv = revs(date);
+  const nowMin = Math.floor((now - parse(date)) / 60000);
+  const pending = steps.filter(s => !dn.has(s.id) && ents[s.id]?.s !== "skipped");
+  const next = pending.find(s => s.timeMin >= nowMin - 90) || pending[0];
+  const hour = now.getHours(), greet = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+  const open = (id, mode) => () => {
+    const e = ents[id];
+    dlg = { id, date, mode, reason: e?.s === "skipped" ? e.text : "", text: e?.s === "replaced" ? e.text : "",
+      kcal: e?.s === "replaced" && e.kcal != null ? String(e.kcal) : "", note: e?.note || "", busy: false, msg: "", error: "", offerNote: false };
+    render();
+  };
+  const toggle = s => () => { markDone(date, s.id, !dn.has(s.id)); render(); };
+  const glasses = glassTarget(t), w = water(date), st = streak(date);
+
+  const actions = (s, skipped, onNext) => h("div", { class: "row", style: "flex-wrap:wrap;gap:2px;margin-top:6px" },
+    onNext && h("button", { class: "btn pri", onclick: toggle(s) }, "Mark done"),
+    !skipped && h("button", { class: "btn link", onclick: open(s.id, "skip") }, "Skip"),
+    (s.kind === "meal" || s.kind === "workout") && h("button", { class: "btn link", onclick: open(s.id, "replace") },
+      onNext ? "Something else" : s.kind === "meal" ? "Ate something else" : "Did something else"),
+    !onNext && h("button", { class: "btn link", onclick: open(s.id, "note") },
+      s.kind === "meal" ? "Change this meal" : s.kind === "workout" ? "Change this workout" : "Note to coach"),
+    !onNext && s.kind === "meal" && h("button", { class: "btn link", onclick: () => { swapMeal(date, s.id); render(); } }, "Show a different meal"));
+
+  const rows = steps.map(s => {
+    const isDone = dn.has(s.id), e = ents[s.id], skipped = e?.s === "skipped", isOpen = expanded.has(s.id) || (s.id === next?.id && !isDone);
+    const sub = s.name ?? s.note;
+    const line = !e ? null : e.s === "skipped" ? "Skipped" + (e.text ? ": " + e.text : "")
+      : e.s === "replaced" ? (s.kind === "meal" ? "Ate instead: " : "Did instead: ") + e.text + (e.kcal != null ? ` (~${e.kcal} kcal)` : "") : null;
+    return h("div", { class: "step" },
+      h("div", { class: "t mono" }, fmt(s.timeMin)),
+      h("div", { class: "rail" },
+        h("button", { class: "dot " + (isDone ? "done" : skipped ? "skipped" : s.kind === "water" ? "water" : ""), "aria-label": isDone ? "Done" : "Mark done", onclick: toggle(s) },
+          isDone ? "✓" : skipped ? "-" : ""),
+        h("div", { class: "line" })),
+      h("div", { class: "card", onclick: () => { expanded.has(s.id) ? expanded.delete(s.id) : expanded.add(s.id); render(); } },
+        h("div", { class: "row" }, h("b", { class: "grow", style: isDone ? "opacity:.5" : "" }, s.title),
+          s.kcal != null && h("span", { class: "mono xs mut" }, `~${s.kcal} kcal`)),
+        sub && s.kind !== "sleep" && h("div", { class: "sm mut" }, sub),
+        line && h("div", { class: "sm " + (skipped ? "sk" : "ok"), style: "font-weight:500;margin-top:4px" }, line),
+        e?.tip && h("div", { class: "xs wt", style: "margin-top:2px" }, "Coach: " + e.tip),
+        e?.note && h("div", { class: "xs mut", style: "margin-top:2px" }, "Your request: " + e.note),
+        rv[s.id] && h("div", { class: "row xs wt" }, h("span", { class: "grow" }, rv[s.id].why ? "Rewritten: " + rv[s.id].why : "Rewritten by the AI"),
+          h("button", { class: "btn link xs", onclick: ev => { ev.stopPropagation(); setRev(date, s.id, null); save(); render(); } }, "Undo")),
+        isOpen ? [detail(s), h("div", { onclick: ev => ev.stopPropagation() }, actions(s, skipped, false))]
+          : s.kind === "meal" && h("div", { class: "xs mut", style: "margin-top:2px" }, "Tap to see what to eat and skip")));
+  });
+
+  const notes = healthNotes(p);
+  return h("div", { style: "padding-top:20px" },
+    h("h1", { style: "font-size:24px;font-weight:800" }, `${greet}, ${p.username}`),
+    h("p", { class: "mut" }, parse(date).toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" }) + "  ·  Pune"),
+    h("div", { class: "row", style: "margin-top:12px" }, h("b", { class: "grow" }, `${dn.size} of ${steps.length} done`),
+      h("span", { class: "sm mut" }, st > 0 ? `${st} day streak` : `A day counts at ${PASS} steps`)),
+    h("div", { class: "bar", style: "margin-top:6px" }, h("i", { style: `width:${dn.size / steps.length * 100}%` })),
+    h("p", { class: "xs mut", style: "margin-top:6px" }, `Target ${t.kcal} kcal  ·  ${t.protein} g protein  ·  ${t.waterL.toFixed(1)} L water`),
+    h("div", { class: "row", style: "margin:4px 0 14px" }, h("b", { class: "sm wt grow" }, `Water  ${w} of ${glasses} glasses`),
+      h("button", { class: "btn link", disabled: w === 0, onclick: () => { addWater(date, -1); render(); } }, "-1"),
+      h("button", { class: "btn link", onclick: () => { addWater(date, 1); render(); } }, "+1 glass")),
+    next && h("div", { class: "card next", style: "margin-bottom:16px" },
+      h("div", { class: "xs", style: "letter-spacing:1px;opacity:.75" }, "UP NEXT  ·  " + fmt(next.timeMin)),
+      h("b", { style: "font-size:17px" }, next.title + (next.kind === "meal" && next.name ? ": " + next.name : "")),
+      detail(next), actions(next, false, true)),
+    rows,
+    h("div", { style: "padding:12px 0" },
+      notes.length > 0 && h("b", {}, "Your health notes"),
+      notes.map(n => h("p", { class: "sm mut", style: "margin-top:4px" }, "•  " + n)),
+      h("p", { class: "xs mut", style: "margin-top:12px" },
+        "This is general guidance, not medical advice. Check your plan with your doctor if you have a medical condition.")));
+}
+
+// ---- Me tab
+function meView() {
+  const p = S.profile, t = targets(p), plan = S.plan, [ft, inch] = feetInches(p.heightCm);
+  const w = week(iso(activeDate(p, new Date())));
+  const stat = (k, v) => h("div", { class: "stat" }, h("span", { class: "mut" }, k), h("span", { class: "mono" }, v));
+  const panel = (title, ...kids) => h("div", { class: "card" }, h("b", { style: "display:block;margin-bottom:6px" }, title), kids);
+  const notes = healthNotes(p), watch = plan?.watchlist || [];
+  return h("div", { class: "stack", style: "padding-top:20px" },
+    h("div", {}, h("h1", { style: "font-size:24px;font-weight:800" }, p.username),
+      h("p", { class: "mut" }, `${p.age} yrs  ·  ${ft} ft ${inch} in  ·  ${p.weightKg} kg  ·  BMI ${t.bmi.toFixed(1)}`)),
+    panel("Daily targets", stat("Calories", `${t.kcal} kcal`), stat("Protein", `${t.protein} g`), stat("Water", `${t.waterL.toFixed(1)} L`),
+      stat("Wake / sleep", `${fmt(hm(p.wake))} / ${fmt(hm(p.sleep))}`)),
+    panel("Last 7 days", stat("Days with a check-in", `${w.daysLogged} of 7`), stat("Average completion", `${w.avgPct}%`),
+      stat("Skipped steps", String(w.skipped)), stat("Meals or workouts swapped", String(w.replaced)),
+      w.mostSkipped && stat("Skipped most", STEP_NAMES[w.mostSkipped] || w.mostSkipped)),
+    panel("Your plan", h("p", {}, plan?.summary || ""),
+      h("p", { class: "xs mut", style: "margin-top:4px" }, plan?.source === "ai" ? "Meals written by an AI service for your profile" : "Built by the offline planner")),
+    watch.length > 0 && panel("Watch out for, in Pune", watch.map(x => h("p", { style: "margin-top:3px" }, "•  " + x))),
+    notes.length > 0 && panel("Health notes", notes.map(x => h("p", { class: "sm", style: "margin-top:3px" }, "•  " + x))),
+    h("div", {},
+      h("div", { class: "row" },
+        h("button", { class: "btn", onclick: startOnboarding }, "Edit profile"),
+        h("button", { class: "btn", onclick: () => { startBuild(); } }, "Rebuild plan")),
+      h("p", { class: "xs mut", style: "margin-top:8px" }, S.consent ? "Syncing with your coach dashboard." : "Sync is off. Your data stays on this phone."),
+      S.consent && S.syncNote && h("p", { class: "xs err", style: "margin-top:4px" }, "Sync problem: " + S.syncNote),
+      h("p", { class: "xs mut", style: "margin-top:4px" }, "Reminders are not available in the web app yet. Open it to see what is next."),
+      addToHome(),
+      h("button", { class: "btn link err", onclick: () => { dlg = { mode: "delete", busy: false, error: "" }; render(); } }, "Delete my data")));
+}
+
+// ---- the one dialog for skip, replace, change request and delete
+const REASONS = ["Not hungry", "Ate out", "No time", "Felt unwell", "Other"];
+
+async function jpegBase64(file, maxSide = 1024) {            // shrink to at most 1024 px on the long edge: a few hundred KB
+  try {
+    const bmp = await createImageBitmap(file);
+    const scale = Math.min(1, maxSide / Math.max(bmp.width, bmp.height));
+    const c = document.createElement("canvas");
+    c.width = Math.round(bmp.width * scale); c.height = Math.round(bmp.height * scale);
+    c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height);
+    return c.toDataURL("image/jpeg", 0.8).split(",")[1];
+  } catch { return null; }
+}
+
+function saveStep(d, entry, on, rewrite) {
+  const { date, id } = d;
+  if (rewrite) setRev(date, id, rewrite);
+  setEntry(date, id, entry);
+  if (on != null) setDone(date, id, on);
+  save(); syncDay(date);
+  if (entry.s === "skipped" || entry.s === "replaced") coach(date, id);
+  dlg = null; render();
+}
+
+function dialogView() {
+  const d = dlg;
+  const close = () => { if (!d.busy) { dlg = null; render(); } };
+  const sheet = (...kids) => h("div", { class: "sheet", onclick: e => { if (e.target === e.currentTarget) close(); } }, h("div", {}, kids));
+  const busyRow = text => d.busy && h("div", { class: "row sm", style: "margin-top:10px" }, h("div", { class: "spin sm" }), text);
+  const errRow = () => d.error && h("p", { class: "sm err", style: "margin-top:8px" }, d.error);
+  const buttons = (okText, onOk) => h("div", { class: "row", style: "margin-top:16px;justify-content:flex-end" },
+    h("button", { class: "btn link", disabled: d.busy, onclick: close }, "Cancel"),
+    h("button", { class: "btn pri", disabled: d.busy, onclick: onOk }, okText));
+
+  if (d.mode === "delete") return sheet(
+    h("h3", {}, "Delete everything?"),
+    h("p", { class: "mut", style: "margin-top:8px" }, "This removes your profile and check-ins from this phone and, if you shared them, from the server. It cannot be undone."),
+    busyRow("Deleting..."), errRow(),
+    buttons("Delete", async () => {
+      d.busy = true; d.error = ""; render();
+      if (await deleteAccount()) { try { localStorage.removeItem("lf"); } catch {} S = {}; dlg = null; startOnboarding(); }
+      else { d.busy = false; d.error = "Could not reach the server. Nothing was deleted. Try again when you are online."; render(); }
+    }));
+
+  const step = daySteps(d.date).find(s => s.id === d.id);
+  if (!step) return null;
+  const existing = entries(d.date)[d.id], rewrites = step.kind === "meal" || step.kind === "workout";
+  const noteEntry = (changedTo, tip = "") => {
+    const s = existing?.s ?? "note";
+    const e = { s, text: s === "note" && changedTo ? "Changed to: " + changedTo : existing?.text ?? "", note: d.note.trim(), tip: tip || existing?.tip || "" };
+    if (existing?.kcal != null) e.kcal = existing.kcal;
+    return e;
+  };
+  const field = (key, props, tag = "input") => h(tag, { ...props, oninput: e => { d[key] = e.target.value; } }, tag === "textarea" ? d[key] : null);
+
+  if (d.mode === "skip") return sheet(
+    h("h3", {}, `Skip ${step.title.toLowerCase()}?`),
+    label("Why? (optional)"),
+    chips(REASONS.map(r => [r, r]), new Set([d.reason]), r => { d.reason = d.reason === r ? "" : r; render(); }),
+    buttons("Save", () => saveStep(d, { s: "skipped", text: d.reason, note: existing?.note || "", tip: "" }, false, null)));
+
+  if (d.mode === "replace") {
+    const analyse = async file => {
+      if (!file) return;
+      d.busy = true; d.msg = ""; render();
+      const b64 = await jpegBase64(file);
+      if (!b64) { d.msg = "Could not read that photo."; d.busy = false; return render(); }
+      const r = await readMeal(b64);
+      d.busy = false;
+      if (r.error) d.msg = r.error + " You can type what you ate instead.";
+      else {
+        d.text = r.items.join(", ");
+        if (r.kcal != null) d.kcal = String(r.kcal);
+        d.msg = r.note || "Estimated by AI from the photo. Check it and edit if it is wrong.";
+      }
+      render();
+    };
+    const pick = h("input", { type: "file", accept: "image/*", hidden: true, onchange: e => analyse(e.target.files[0]) });
+    return sheet(
+      h("h3", {}, step.kind === "meal" ? "What did you eat instead?" : "What did you do instead?"),
+      h("label", { class: "fld" }, h("span", {}, "What you had"), field("text", { rows: 2, maxlength: 160, disabled: d.busy }, "textarea")),
+      h("label", { class: "fld" }, h("span", {}, "Calories, if you know (optional)"),
+        h("input", { inputmode: "numeric", maxlength: 4, value: d.kcal, disabled: d.busy,
+          oninput: e => { e.target.value = e.target.value.replace(/\D/g, ""); d.kcal = e.target.value; } })),
+      step.kind === "meal" && h("div", { style: "margin-top:10px" }, pick,
+        h("button", { class: "btn", disabled: d.busy, onclick: () => pick.click() }, "Add a photo"),
+        h("p", { class: "xs mut", style: "margin-top:4px" }, "The photo is sent to the AI service to read the food. It is not saved.")),
+      busyRow("Reading the photo..."),
+      d.msg && h("p", { class: "xs mut", style: "margin-top:8px" }, d.msg), errRow(),
+      buttons("Save", () => {
+        if (!d.text.trim()) { d.error = "Say what you had."; return render(); }
+        const k = parseInt(d.kcal, 10);
+        const e = { s: "replaced", text: d.text.trim(), note: existing?.note || "", tip: "" };
+        if (Number.isFinite(k)) e.kcal = Math.min(3000, Math.max(0, k));
+        saveStep(d, e, true, null);
+      }));
+  }
+
+  return sheet(                                               // "note": a change request
+    h("h3", {}, !rewrites ? "Note for your coach" : step.kind === "meal" ? "Change this meal" : "Change this workout"),
+    h("p", { class: "sm mut", style: "margin-top:6px" }, rewrites
+      ? "Say what should change, for example: no paneer, or a lighter dinner. The AI rewrites just this one."
+      : "Leave a note for your coach about this step."),
+    h("label", { class: "fld" }, h("span", {}, "Your request"), field("note", { rows: 3, maxlength: 200, disabled: d.busy }, "textarea")),
+    busyRow("The AI is rewriting this. It can take up to a minute."), errRow(),
+    d.offerNote && h("button", { class: "btn", style: "margin-top:10px", onclick: () => saveStep(d, noteEntry(), null, null) }, "Save as a note for my coach only"),
+    buttons(rewrites ? "Rewrite" : "Save", async () => {
+      if (!d.note.trim()) { d.error = "Write your request first."; return render(); }
+      if (!rewrites) return saveStep(d, noteEntry(), null, null);
+      d.busy = true; d.error = ""; render();
+      const r = await stepAi("change", step, d.note.trim());
+      d.busy = false;
+      if (r.error || !r.revision) { d.error = r.error || "The AI could not do that."; d.offerNote = true; return render(); }
+      saveStep(d, noteEntry(r.revision.name ?? r.revision.title, r.tip), null, { ...r.revision, why: d.note.trim() });
+    }));
+}
+
+// ---------------------------------------------------------------- start
+if (!S.profile) startOnboarding(); else { render(); if (S.consent) syncRecent(); }
+document.addEventListener("visibilitychange", () => {                        // "up next" refreshes when the app is reopened, never while typing in a dialog
+  if (document.visibilityState === "visible" && screen === "main" && !dlg) { render(); if (S.consent) syncRecent(); }
+});
+</script>
+</body>
+</html>

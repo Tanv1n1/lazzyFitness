@@ -590,6 +590,12 @@ def summary(c):
 
 
 # ---------- HTTP ----------
+# The phone web app (for iPhones and any browser). A fixed list, so no path can reach other files.
+WEB = {"/app": ("index.html", "text/html"), "/app/": ("index.html", "text/html"),
+       "/app/manifest.webmanifest": ("manifest.webmanifest", "application/manifest+json"),
+       "/app/icon.png": ("icon.png", "image/png")}
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "LazyFitness/1.0"
 
@@ -639,6 +645,9 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if path in ("/", "/admin", "/admin/"):
                 return self._send(200, (HERE / "admin" / "index.html").read_bytes(), "text/html")
+            if path in WEB:
+                name, ctype = WEB[path]
+                return self._send(200, (HERE / "web" / name).read_bytes(), ctype)
             if path == "/api/health":
                 return self._send(200, {"ok": True})
             if path.startswith("/admin/api/"):

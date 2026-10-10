@@ -1,0 +1,10 @@
+{
+  "name": "Lazy Fitness",
+  "short_name": "Lazy Fitness",
+  "start_url": "/app/",
+  "scope": "/app/",
+  "display": "standalone",
+  "background_color": "#EEF1EC",
+  "theme_color": "#14201B",
+  "icons": [{ "src": "/app/icon.png", "sizes": "512x512", "type": "image/png" }]
+}
