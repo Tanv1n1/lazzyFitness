@@ -337,8 +337,11 @@ function workoutFor(p, date) {
 }
 
 /** One day as a list of steps. [swaps] says how many times a slot's meal was swapped, which moves it along the pool. */
-function dayPlan(p, plan, date, swaps) {
+function dayPlan(p, plan, date, swaps, avoid = []) {
   const sch = schedule(p), t = targets(p), idx = epochDay(date), steps = [];
+  // A meal with a food the person never wants is left out, matching from the start of a word: "bhakri" also hits "bhakris".
+  const bad = avoid.map(a => new RegExp("(^|[^a-z])" + a.replace(/s$/, "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  const ok = m => { const text = (m.name + " " + m.items.join(" ")).toLowerCase(); return !bad.some(r => r.test(text)); };
   let waterNote = "";
   if (p.conds.includes("kidney")) waterNote += "Follow the fluid limit your doctor gave you. ";
   if (p.conds.includes("thyroid")) waterNote += "Thyroid tablet? Take it with this water, as your doctor advised. ";
@@ -353,8 +356,11 @@ function dayPlan(p, plan, date, swaps) {
       steps.push({ id: "sleep", kind: "sleep", timeMin: time, title: "In bed, lights out", eat: [], skip: [], exercises: [],
         note: "Screens down 20 minutes before. Aim for the same time every night." });
     } else {
-      const own = (plan.meals[slot] || []);
-      const pool = own.length ? own : localPlan(p).meals[slot];
+      const own = plan.meals[slot] || [];
+      // The plan's meals, then the offline planner's, then (only if nothing is left) the plan unfiltered: better a meal than a gap.
+      let pool = own.filter(ok);
+      if (!pool.length) pool = localPlan(p).meals[slot].filter(ok);
+      if (!pool.length) pool = own.length ? own : localPlan(p).meals[slot];
       const n = pool.length, m = pool[(((idx + IDS.indexOf(slot) + swaps(slot)) % n) + n) % n];
       const kcal = Math.round((t.kcal * (SHARE[slot] || 0) / 100) / 10) * 10;
       steps.push({ id: slot, kind: "meal", timeMin: time, title: SLOT_TITLE[slot], kcal, name: m.name, eat: m.items, skip: m.skip, exercises: [] });
@@ -389,7 +395,7 @@ const revised = (s, r) => !r ? s : {
   kcal: r.kcal ?? s.kcal, exercises: r.exercises ?? s.exercises, note: r.note ?? s.note,
 };
 /** The day as the person sees it: the plan, with meal swaps and AI rewrites applied. */
-const daySteps = date => dayPlan(S.profile, S.plan || localPlan(S.profile), parse(date), id => swaps(date, id))
+const daySteps = date => dayPlan(S.profile, S.plan || localPlan(S.profile), parse(date), id => swaps(date, id), S.avoid || [])
   .map(s => revised(s, revs(date)[s.id]));
 
 const counts = () => Object.fromEntries(Object.entries(S.log || {}).map(([d, v]) => [d, v.length]));
@@ -444,7 +450,7 @@ async function pushProfile(planSource) {
     const p = S.profile, t = targets(p);
     if (!S.consent) return false;
     const { other, ...base } = profileJson(p);
-    const body = { ...base, conds: other ? [...p.conds, "other"] : p.conds, kcal: t.kcal, protein: t.protein, plan_source: planSource };
+    const body = { ...base, conds: other ? [...p.conds, "other"] : p.conds, kcal: t.kcal, protein: t.protein, plan_source: planSource, avoid: S.avoid || [] };
     if (!S.userId) {
       const r = await call("POST", "/api/register", { ...body, consent: true, invite: S.invite });
       if (r.code !== 200) {
@@ -493,8 +499,9 @@ const needsSharing = "Turn on sharing under Me, Edit profile, so the AI can help
 async function ai(path, body, ms) {
   if (!S.consent || !S.userId) return { error: needsSharing };
   try {
-    const r = await call("POST", path, body, ms);
-    return r.code === 200 ? json(r.body) : { error: aiFailure(r.code, r.body) };
+    const r = await call("POST", path, body, ms), j = json(r.body);
+    if (Array.isArray(j.avoid)) { S.avoid = j.avoid; save(); }       // the server sends "foods I don't want" on every answer, even a failed one
+    return r.code === 200 ? j : { error: aiFailure(r.code, r.body) };
   } catch { return { error: "Could not reach the server." }; }
 }
 
@@ -817,6 +824,7 @@ function meView() {
       h("p", { class: "xs mut", style: "margin-top:4px" }, plan?.source === "ai" ? "Meals written by an AI service for your profile" : "Built by the offline planner")),
     watch.length > 0 && panel("Watch out for, in Pune", watch.map(x => h("p", { style: "margin-top:3px" }, "•  " + x))),
     notes.length > 0 && panel("Health notes", notes.map(x => h("p", { class: "sm", style: "margin-top:3px" }, "•  " + x))),
+    avoidPanel(panel),
     h("div", {},
       h("div", { class: "row" },
         h("button", { class: "btn", onclick: startOnboarding }, "Edit profile"),
@@ -826,6 +834,20 @@ function meView() {
       h("p", { class: "xs mut", style: "margin-top:4px" }, "Reminders are not available in the web app yet. Open it to see what is next."),
       addToHome(),
       h("button", { class: "btn link err", onclick: () => { dlg = { mode: "delete", busy: false, error: "" }; render(); } }, "Delete my data")));
+}
+
+/** The foods this person never wants suggested. Learned from change requests ("I don't like bhakri"), and editable here. */
+function avoidPanel(panel) {
+  const list = S.avoid || [];
+  const set = next => { S.avoid = next; save(); render(); if (S.consent) pushProfile(S.plan?.source || "local"); };
+  const field = h("input", { type: "text", maxlength: 30, placeholder: "Add a food, like paneer", autocomplete: "off",
+    onkeydown: e => { if (e.key === "Enter") add(); } });
+  const add = () => { const t = field.value.toLowerCase().replace(/[^a-z ]/g, "").trim(); if (t.length >= 2) set([...new Set([...list, t])]); };
+  return panel("Foods I don't want",
+    list.length ? list.map(food => h("div", { class: "row" }, h("span", { class: "grow" }, food),
+      h("button", { class: "btn link", onclick: () => set(list.filter(x => x !== food)) }, "Remove")))
+      : h("p", { class: "xs mut" }, "None yet. Say \"I don't like bhakri\" when you change a meal, or add a food here."),
+    h("div", { class: "row", style: "margin-top:8px" }, field, h("button", { class: "btn", onclick: add }, "Add")));
 }
 
 // ---- the one dialog for skip, replace, change request and delete
@@ -929,7 +951,7 @@ function dialogView() {
   return sheet(                                               // "note": a change request
     h("h3", {}, !rewrites ? "Note for your coach" : step.kind === "meal" ? "Change this meal" : "Change this workout"),
     h("p", { class: "sm mut", style: "margin-top:6px" }, rewrites
-      ? "Say what should change, for example: no paneer, or a lighter dinner. The AI rewrites just this one."
+      ? "Say what should change, for example: no paneer, or a lighter dinner. The AI rewrites just this one. Say \"I don't like bhakri\" and it is never suggested again."
       : "Leave a note for your coach about this step."),
     h("label", { class: "fld" }, h("span", {}, "Your request"), field("note", { rows: 3, maxlength: 200, disabled: d.busy }, "textarea")),
     busyRow("The AI is rewriting this. It can take up to a minute."), errRow(),

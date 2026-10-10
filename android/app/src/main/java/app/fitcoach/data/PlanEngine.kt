@@ -357,7 +357,10 @@ object PlanEngine {
     }
 
     // ---------- the day ----------
-    fun dayPlan(p: Profile, plan: Plan, date: LocalDate, swaps: (String) -> Int = { 0 }): List<Step> {
+    fun dayPlan(p: Profile, plan: Plan, date: LocalDate, avoid: List<String> = emptyList(), swaps: (String) -> Int = { 0 }): List<Step> {
+        // A meal with a food the person never wants is left out, matching from the start of a word: "bhakri" also hits "bhakris".
+        val bad = avoid.map { Regex("(^|[^a-z])" + Regex.escape(it.lowercase().removeSuffix("s"))) }
+        val ok = { m: Meal -> val text = (m.name + " " + m.items.joinToString(" ")).lowercase(); bad.none { it.containsMatchIn(text) } }
         val sch = schedule(p)
         val t = targets(p)
         val idx = date.toEpochDay().toInt()
@@ -375,7 +378,10 @@ object PlanEngine {
             when (slot) {
                 "workout" -> steps += workoutFor(p, date).copy(timeMin = time)
                 in SLOT_TITLE -> {
-                    val pool = plan.meals[slot].orEmpty().ifEmpty { localPlan(p).meals[slot].orEmpty() }
+                    val own = plan.meals[slot].orEmpty()
+                    // The plan's meals, then the offline planner's, then (only if nothing is left) the plan unfiltered: better a meal than a gap.
+                    val pool = own.filter(ok).ifEmpty { localPlan(p).meals[slot].orEmpty().filter(ok) }
+                        .ifEmpty { own.ifEmpty { localPlan(p).meals[slot].orEmpty() } }
                     val m = pool[((idx + STEP_IDS.indexOf(slot) + swaps(slot)) % pool.size + pool.size) % pool.size]
                     val kcal = ((t.kcal * (SHARE[slot] ?: 0) / 100.0) / 10).roundToInt() * 10
                     steps += Step(slot, "meal", time, SLOT_TITLE.getValue(slot), kcal, m.name, m.items, m.skip)

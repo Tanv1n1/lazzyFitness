@@ -65,6 +65,7 @@ FAKE_REVISED = {"name": "Test revised meal", "eat": ["2 moong cheela", "mint chu
 FAKE_WORKOUT = {"title": "Short walk", "name": "20 min", "exercises": [["Brisk walk", "20 min"]], "note": "easy day"}
 FAKE_MEAL_READING = {"items": ["2 bhakri, ~220 kcal", "dal, 1 bowl, ~150 kcal"], "kcal": 370,
                      "confidence": "low", "note": "Portions are a guess."}
+FAKE_AVOID = {"revision": FAKE_REVISED, "tip": "Swapped the paneer for moong.", "avoid": ["Tindas"]}   # what a model says it learned
 fake_seen = []   # (path, authorization header, body text) of every call the server makes to the fake AI provider
 
 
@@ -72,7 +73,16 @@ class FakeProvider(BaseHTTPRequestHandler):
     def do_POST(self):
         body = self.rfile.read(int(self.headers.get("Content-Length") or 0)).decode()
         fake_seen.append((self.path, self.headers.get("Authorization"), body))
-        if '"image_url"' in body:
+        content = json.loads(body)["messages"][0]["content"]
+        prompt = content if isinstance(content, str) else ""
+        if "Estimate the calories of ONE unit" in prompt:           # the server asks about foods its tables do not know
+            asked = json.loads(prompt.split("Foods: ")[1].split("\n")[0])
+            reply = {"foods": [{"food": f["food"], "unit": "glass", "kcal": 210} for f in asked]}
+        elif "Revise ONE meal" in body and 'Request: "mujhe tinda' in prompt:   # a request the plain-text rule cannot read, so the model reports it
+            reply = FAKE_AVOID
+        elif "Revise ONE meal" in body and 'Request: "bad bhakri' in prompt:    # a model that ignores what the person said they avoid
+            reply = {"revision": {"name": "Bhakri thali", "eat": ["2 bhakri", "dal"], "skip": ["maida"], "kcal": 400}, "tip": "ok"}
+        elif '"image_url"' in body:
             reply = {"items": [], "kcal": 0, "confidence": "high", "note": "No food."} if "MTExMTEx" in body else FAKE_MEAL_READING
         elif "Revise ONE meal" in body:
             reply = {"revision": FAKE_REVISED, "tip": "Swapped the paneer for moong."}
@@ -90,7 +100,10 @@ class FakeProvider(BaseHTTPRequestHandler):
                 time.sleep(3)                                  # ... or is too slow, so the next model must join in
             text = "Sorry, I cannot do that."
         out = json.dumps({"choices": [{"message": {"content": text}}]}).encode()
-        if "force refused" in body:                                  # lets a test play a provider that refuses the account
+        if "force paid" in body and json.loads(body).get("model") == "bad-model":        # one model that moved behind a subscription
+            out = json.dumps({"error": {"message": "This model is only for subscribers."}}).encode()
+            self.send_response(402)
+        elif "force refused" in body:                                # lets a test play a provider that refuses the account
             out = json.dumps({"error": {"message": "Daily check-in required to use free models."}}).encode()
             self.send_response(402)
         else:
@@ -269,7 +282,8 @@ def main():
         lunch = {"id": "lunch", "kind": "meal", "title": "Lunch", "name": "Paneer bhurji", "eat": ["2 phulka", "paneer bhurji"],
                  "skip": ["raita"], "exercises": [], "kcal": 640}
         c, r = req("POST", "/api/step-ai", {"mode": "change", "request": "no paneer please", "step": lunch, "profile": prof}, hdr3)
-        check("change request rewrites that meal", c == 200 and r["revision"]["name"] == "Test revised meal" and r["revision"]["kcal"] == 380, f"{c} {r}")
+        check("change request rewrites that meal, priced from its foods (not the model's 380)",
+              c == 200 and r["revision"]["name"] == "Test revised meal" and r["revision"]["kcal"] == 295, f"{c} {r}")
         sent = fake_seen[-1][2]
         check("the request and the meal reach the model, the username does not",
               "no paneer please" in sent and "Paneer bhurji" in sent and "Tester3" not in sent)
@@ -278,8 +292,8 @@ def main():
         c, r = req("POST", "/api/step-ai", {"mode": "change", "request": "knee hurts, go easy", "step": workout, "profile": prof}, hdr3)
         check("a workout can be changed too", c == 200 and r["revision"]["title"] == "Short walk", f"{c} {r}")
         c, r = req("POST", "/api/step-ai", {"mode": "replaced", "request": "2 samosas and chai", "step": lunch, "profile": prof}, hdr3)
-        check("a swapped meal gets calories and a tip, and no automatic rewrite of the next meal",
-              c == 200 and r["kcal"] == 520 and r["tip"] and "revision" not in r, f"{c} {r}")
+        check("a swapped meal gets calories from the food table (not the model's 520) and a tip, and no automatic rewrite",
+              c == 200 and r["kcal"] == 610 and r["tip"] and "revision" not in r, f"{c} {r}")
         c, r = req("POST", "/api/step-ai", {"mode": "skipped", "request": "Not hungry", "step": lunch, "profile": prof}, hdr3)
         check("a skipped meal gets a tip", c == 200 and r["tip"] == "Add protein at dinner." and "revision" not in r, f"{c} {r}")
         check("bad mode is refused", req("POST", "/api/step-ai", {"mode": "hack", "step": lunch, "profile": prof}, hdr3)[0] == 400)
@@ -302,15 +316,76 @@ def main():
 
         c, refused = req("POST", "/api/plan", {"profile": {**profile(1), "other": "force refused"}}, hdr1)
         asked = len(fake_seen)
-        check("a refusal shows the provider's own message, and no other model is tried",
-              c == 503 and "Daily check-in required" in refused.get("detail", "") and fake_seen[-1][2].count("force refused") == 1
-              and sum("force refused" in b for _, _, b in fake_seen) == 1, f"{c} {refused}")
+        check("an account-wide refusal shows the provider's own message and stops after two models say the same",
+              c == 503 and "Daily check-in required" in refused.get("detail", "") and sum("force refused" in b for _, _, b in fake_seen) == 2,
+              f"{c} {refused}")
+        c, paid = req("POST", "/api/plan", {"profile": {**profile(1), "other": "force paid"}}, hdr1)
+        check("a refusal that is only about one model falls through to the next model", c == 200 and "meals" in paid, f"{c} {paid}")
 
         # a user deletes their own data, which frees a slot
         uid4, key4 = results[4][1], results[4][4]
         check("user can delete their own account", req("DELETE", "/api/me", headers={"X-User-Id": uid4, "X-User-Key": key4})[0] == 200)
         check("deleted user is gone from admin", req("GET", f"/admin/api/users/{uid4}", headers=A)[0] == 404)
-        check("freed slot lets a new tester in", req("POST", "/api/register", profile(5))[0] == 200)
+        code5, new5 = req("POST", "/api/register", profile(5))
+        check("freed slot lets a new tester in", code5 == 200)
+
+        # calories come from the food table; the AI only prices foods nobody has priced, and the answer is remembered
+        h5 = {"X-User-Id": new5["user_id"], "X-User-Key": new5["user_key"]}
+        p5 = {**profile(5), "targets": {"kcal": 1900, "protein": 100}}
+        gap_calls = lambda: sum("Estimate the calories of ONE unit" in b for _, _, b in fake_seen)
+        swap = lambda text, prof=p5: req("POST", "/api/step-ai", {"mode": "replaced", "request": text, "step": lunch, "profile": prof}, h5)
+        c, r = swap("1 glass dragon fruit smoothie")
+        asked = gap_calls()                                       # the failing first model is logged too, so this counts provider requests
+        check("a food the table lacks is priced by the AI", c == 200 and r["kcal"] == 210 and asked >= 1, f"{c} {r}")
+        c, r = swap("1 glass dragon fruit smoothie")
+        check("the same food later is priced from memory, with no second AI question", c == 200 and r["kcal"] == 210 and gap_calls() == asked, f"{c} {r} {gap_calls()} vs {asked}")
+        _, learned = req("GET", "/admin/api/foods", headers=A)
+        check("the admin can see what was learned", {"name": "dragon fruit smoothie", "unit": "glass", "kcal": 210} in learned.get("learned", []), str(learned))
+        c, r = swap("2 samosas and a cup of chai", {**p5, "other": "force refused"})
+        check("known foods still get their calories when the AI cannot write the tip", c == 200 and r["kcal"] == 610 and r["tip"] == "", f"{c} {r}")
+
+        # foods a person never wants suggested
+        req("DELETE", "/api/me", headers=hdr3)
+        code6, new6 = req("POST", "/api/register", profile(6))
+        h6 = {"X-User-Id": new6["user_id"], "X-User-Key": new6["user_key"]}
+        p6 = {**profile(6), "targets": {"kcal": 1900, "protein": 100}}
+        change = lambda text: req("POST", "/api/step-ai", {"mode": "change", "request": text, "step": lunch, "profile": p6}, h6)
+        c, r = change("I don't like bhakri and paneer")
+        sent = fake_seen[-1][2]
+        check("a plain \"I don't like X\" is remembered, and the person is told",
+              c == 200 and r["avoid"] == ["bhakri", "paneer"] and "Noted" in r["tip"] and "bhakri" in r["tip"], f"{c} {r}")
+        check("the model is told what to avoid", '\\"avoid\\": [\\"bhakri\\", \\"paneer\\"]' in sent, sent[:300])
+        c, r = change("mujhe tinda pasand nahi")
+        check("what the model reports as disliked is remembered too", c == 200 and r["avoid"] == ["bhakri", "paneer", "tinda"], f"{c} {r}")
+        c, r = change("bad bhakri please")
+        check("a rewrite that uses an avoided food is refused, and the list still comes back",
+              c == 503 and "avoids" in r.get("detail", "") and "bhakri" in r.get("avoid", []), f"{c} {r}")
+        req("POST", "/api/profile", {**profile(6), "avoid": ["Samosas", "poha", "poha", "x"]}, h6)
+        c, r = req("POST", "/api/step-ai", {"mode": "skipped", "request": "Not hungry", "step": lunch, "profile": p6}, h6)
+        check("the app can set the list (cleaned, no duplicates) and gets it back", c == 200 and r["avoid"] == ["samosa", "poha"], f"{c} {r}")
+
+        # the pieces on their own
+        import foods
+        est = lambda t: foods.estimate(t)[0]
+        check("quantities are read from the text", (est("2 samosas and a cup of chai"), est("Paneer bhurji, 1 bowl"),
+              est("Chicken sukka, 150 g, less oil"), est("2 egg bhurji, less oil")) == (610, 280, 300, 220),
+              str([est("2 samosas and a cup of chai"), est("Paneer bhurji, 1 bowl"), est("Chicken sukka, 150 g, less oil")]))
+        check("a food the table does not know is reported, not guessed", foods.estimate("chilli paneer momos") == (0, [(1.0, None, "chilli paneer momo")]))
+        check("the plain-text rule reads dislikes and ignores one-off wishes",
+              (foods.avoid_from_text("never give me poha again"), foods.avoid_from_text("no paneer today"), foods.avoid_from_text("lighter dinner please"),
+               foods.avoid_from_text("I don't like bhakri and paneer"))
+              == (["poha"], [], [], ["bhakri", "paneer"]))
+        check("an avoided food matches from the start of a word, not inside one",
+              foods.mentions("2 bhakris", ["bhakri"]) and not foods.mentions("price list", ["rice"]) and not foods.mentions("boiled egg", ["oil"]))
+        lunch_with_paneer = {"name": "Paneer thali", "items": ["2 phulka", "paneer bhurji"], "skip": []}
+        mixed = {**FAKE_REPLY, "meals": {**FAKE_REPLY["meals"], "lunch": [lunch_with_paneer, FAKE_MEAL]}}
+        kept = server.plan_from_reply(mixed, ["paneer"])[0]
+        check("an AI plan drops meals with an avoided food", kept is not None and kept["meals"]["lunch"] == [FAKE_MEAL], str(kept))
+        only = {**FAKE_REPLY, "meals": {**FAKE_REPLY["meals"], "lunch": [lunch_with_paneer]}}
+        check("an AI plan with nothing left for a slot counts as a failed try", server.plan_from_reply(only, ["paneer"])[0] is None)
+        priced = server.price_photo(None, {"items": ["2 samosa, ~400 kcal", "1 bowl zzzunknown, ~90 kcal"], "kcal": 1})
+        check("a photo reading uses the table for known foods and the model's guess for the rest",
+              priced["items"] == ["2 samosa, ~520 kcal", "1 bowl zzzunknown, ~90 kcal"] and priced["kcal"] == 610, str(priced))
 
         print("\n" + ("ALL CHECKS PASSED" if not failures else f"{len(failures)} CHECK(S) FAILED: {failures}"))
         return 1 if failures else 0

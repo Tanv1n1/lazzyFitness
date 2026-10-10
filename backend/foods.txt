@@ -1,0 +1,172 @@
+# Calories per portion for foods eaten in Pune. One food per line:  name | unit | kcal | other names, comma separated
+# Typical home or stall portions, rounded. These are estimates, not lab values. Edit freely: the server reads this file at start.
+# Units: piece, slice, plate, bowl, cup, glass, tbsp, tsp, handful, scoop, serving, 100g.  A bowl is a katori of about 150 ml.
+# "egg bhurji", "egg curry" and "omelette" are per 2-egg serving.
+
+# bread, rotis, snacks
+bhakri | piece | 110 | jowar bhakri, bajra bhakri, jowar roti, bajra roti
+ragi bhakri | piece | 100 | ragi roti
+roti | piece | 100 | chapati, chapatti, chapathi
+phulka | piece | 85 | fulka
+paratha | piece | 230 | parantha, plain paratha
+aloo paratha | piece | 300 | aloo parantha, batata paratha
+puri | piece | 110 | poori
+thalipeeth | piece | 160 | jowar thalipeeth, thalipith
+naan | piece | 260 | butter naan
+bread | slice | 75 | white bread, brown bread, toast, multigrain bread, multigrain toast, bread slice
+pav | piece | 90 | ladi pav, bun
+bun maska | piece | 250 | maska pav
+dosa | piece | 135 | plain dosa, dose
+ragi dosa | piece | 120 |
+masala dosa | piece | 250 |
+idli | piece | 55 | idly
+uttapam | piece | 180 | uttappa, uthappa
+medu vada | piece | 130 |
+vada pav | piece | 300 | wada pav, vada paav
+batata vada | piece | 150 | aloo vada, batata wada
+sabudana vada | piece | 150 |
+samosa | piece | 260 | samosas
+kachori | piece | 250 | kachodi
+kanda bhaji | piece | 60 | kanda bhajji, onion bhaji, onion bhajji, onion pakora, pakoda, pakora
+bhakarwadi | piece | 45 | bakarwadi
+chakli | piece | 70 | chakali
+dhokla | piece | 50 |
+dabeli | piece | 250 | dabeli pav
+moong cheela | piece | 100 | moong chilla, cheela, chilla, moong dal cheela
+besan chilla | piece | 120 | besan cheela
+poha | plate | 270 | kanda poha, kande pohe, pohe
+upma | plate | 250 | rava upma
+sabudana khichdi | plate | 340 | sabudana khichadi
+misal pav | plate | 550 | misal
+pav bhaji | plate | 500 | pav bhaji
+bhel | plate | 300 | bhel puri
+pani puri | piece | 35 | panipuri, golgappa, pani poori
+ragda pattice | plate | 350 | ragda patties, ragda pattis
+oats | bowl | 150 | oatmeal, porridge
+
+# eggs and meat
+egg | piece | 75 | boiled egg, eggs, anda
+egg white | piece | 17 |
+egg bhurji | serving | 220 | anda bhurji, bhurji
+egg curry | serving | 300 | anda curry
+omelette | serving | 200 | omelet, masala omelette
+chicken curry | bowl | 300 | chicken gravy
+chicken sukka | 100g | 200 | chicken sukha, chicken sukkha, chicken sukka
+chicken tikka | piece | 65 | grilled chicken tikka
+grilled chicken | 100g | 165 | chicken breast, chicken
+chicken soup | bowl | 90 | clear chicken soup
+fish curry | bowl | 250 | fish gravy
+grilled fish | 100g | 150 | fish fry, fish
+
+# dal, curries, vegetables
+dal | bowl | 150 | toor dal, moong dal, masoor dal, dal tadka, dal fry, daal, varan dal
+varan | bowl | 130 | varan bhaat
+dal palak | bowl | 170 | palak dal
+lauki chana dal | bowl | 170 | lauki dal
+sambar | bowl | 90 | sambhar
+kadhi | bowl | 120 | gujarati kadhi
+sol kadhi | glass | 110 | solkadhi
+rajma | bowl | 220 | rajma masala
+chole | bowl | 250 | chana masala, chhole
+matki usal | bowl | 180 | matki, moth usal, matki chi usal
+usal | bowl | 160 | misal usal
+amti | bowl | 130 | katachi amti
+paneer bhurji | bowl | 280 |
+paneer | 100g | 265 | cottage cheese
+paneer butter masala | bowl | 380 | butter paneer, paneer makhani
+palak paneer | bowl | 300 |
+tofu | 100g | 100 | tofu stir fry
+tofu bhurji | bowl | 200 |
+mixed veg | bowl | 110 | mixed vegetable, veggy, vegetable, sabzi, bhaji, seasonal bhaji, seasonal veg, stir fry vegetable
+aloo sabzi | bowl | 160 | batata bhaji, potato sabzi, aloo
+bhindi | bowl | 120 | okra
+palak | bowl | 60 | spinach
+karela | bowl | 90 | bitter gourd, karele
+lauki | bowl | 70 | dudhi, doodhi, bottle gourd, lauki sabzi
+baingan | bowl | 150 | brinjal, eggplant, vangi, baingan bharta, vangi bharit
+gobi | bowl | 100 | cauliflower, gobhi, phool gobi
+cabbage | bowl | 60 | patta gobi, kobi
+matar | bowl | 120 | peas, green peas
+beans | bowl | 80 | french beans, farasbi
+mushroom | bowl | 70 |
+capsicum | bowl | 60 | shimla mirch
+shevga | bowl | 80 | drumstick
+tindora | bowl | 80 | tondli, ivy gourd
+methi | bowl | 60 |
+salad | bowl | 40 | kachumber, kachumber salad, green salad, carrot cucumber salad, cucumber salad
+cucumber | bowl | 20 | cucumber slice, kakdi
+sprouts | bowl | 100 | sprout, moong sprouts
+sprouts chaat | bowl | 130 | sprout chaat, sprouted salad
+chana | bowl | 150 | boiled chana, chana chaat, chickpea, kala chana
+khichdi | bowl | 220 | moong dal khichdi, moong khichdi, dal khichdi
+rice | bowl | 200 | steamed rice, white rice, cooked rice, plain rice, bhaat
+jeera rice | bowl | 230 |
+pulao | bowl | 250 | veg pulao
+fried rice | bowl | 330 | veg fried rice, egg fried rice, chicken fried rice
+biryani | plate | 500 | chicken biryani, veg biryani
+
+# dairy, drinks
+milk | glass | 150 | doodh
+haldi milk | cup | 150 | turmeric milk
+curd | bowl | 90 | dahi, yogurt, yoghurt
+raita | bowl | 90 |
+taak | glass | 40 | buttermilk, chaas, chhaas, tak
+lassi | glass | 180 | sweet lassi
+chai | cup | 90 | tea, milk tea, masala chai, cutting chai, kadak chai
+black tea | cup | 5 | green tea, lemon tea
+coffee | cup | 90 | filter coffee, milk coffee
+black coffee | cup | 5 |
+cold coffee | glass | 220 |
+coconut water | glass | 45 | nariyal pani, tender coconut water
+sugarcane juice | glass | 180 | ganne ka ras, usacha ras
+fruit juice | glass | 120 | juice, packaged juice
+cold drink | glass | 100 | cola, soft drink, soda, pepsi, coke, thums up, sprite
+mastani | glass | 400 |
+milkshake | glass | 300 | milk shake, shake
+water | glass | 0 | jeera water, ajwain water, warm water
+ice cream | scoop | 140 | icecream
+shrikhand | bowl | 250 |
+
+# sweets and packaged
+gulab jamun | piece | 150 |
+jalebi | piece | 130 |
+laddu | piece | 180 | ladoo, laddoo
+modak | piece | 150 |
+puran poli | piece | 250 |
+kheer | bowl | 250 | payasam
+barfi | piece | 120 | burfi
+biscuit | piece | 40 | khari, cookie
+marie | piece | 30 | marie biscuit
+chips | handful | 160 | potato chips, wafers
+namkeen | handful | 170 | chivda, mixture, farsan
+papad | piece | 45 | papadum, appalam
+chutney | tbsp | 25 | mint chutney, coriander chutney, coconut chutney, green chutney
+pickle | tsp | 15 | achar
+sugar | tsp | 20 |
+ghee | tsp | 45 |
+oil | tsp | 40 |
+butter | tsp | 35 |
+peanut butter | tbsp | 95 |
+cheese | slice | 60 | cheese slice
+honey | tsp | 22 |
+
+# fruit, nuts, simple snacks
+banana | piece | 100 |
+apple | piece | 80 |
+guava | piece | 70 | peru
+papaya | bowl | 60 |
+orange | piece | 60 | santra, mosambi
+mango | piece | 150 | aam
+watermelon | bowl | 45 | tarbuj
+pomegranate | bowl | 120 | anar
+grape | bowl | 100 | angur
+fruit | piece | 80 | seasonal fruit
+almond | piece | 7 | badam
+cashew | piece | 9 | kaju
+date | piece | 20 | dates, khajur
+raisin | tsp | 10 | kishmish
+walnut | piece | 26 | akhrot
+peanut | tbsp | 55 | roasted peanut, groundnut, shengdana
+roasted chana | handful | 110 | bhajka chana, phutana
+makhana | handful | 100 | roasted makhana, fox nut, phool makhana
+corn | piece | 140 | boiled corn, corn cob, bhutta, sweet corn

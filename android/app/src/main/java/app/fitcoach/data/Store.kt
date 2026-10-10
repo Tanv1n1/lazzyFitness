@@ -63,6 +63,11 @@ class Store(ctx: Context) {
         get() = sp.getString("user_key", null)
         set(v) = sp.edit().putString("user_key", v).apply()
 
+    /** Foods the person never wants suggested. The server keeps the same list and returns it after a change request. */
+    var avoid: List<String>
+        get() = sp.getString("avoid", null)?.let { runCatching { strings(JSONArray(it)) }.getOrNull() } ?: emptyList()
+        set(v) = sp.edit().putString("avoid", JSONArray(v).toString()).apply()
+
     var profile: Profile?
         get() = sp.getString("profile", null)?.let { runCatching { profileFrom(JSONObject(it)) }.getOrNull() }
         set(v) = sp.edit().putString("profile", v?.let { profileTo(it).toString() }).apply()
@@ -138,7 +143,7 @@ class Store(ctx: Context) {
     fun daySteps(date: LocalDate): List<Step> {
         val p = profile ?: return emptyList()
         val revs = revisions(date)
-        return PlanEngine.dayPlan(p, plan ?: PlanEngine.localPlan(p), date) { slot -> swaps(date, slot) }.map { it.revised(revs[it.id]) }
+        return PlanEngine.dayPlan(p, plan ?: PlanEngine.localPlan(p), date, avoid) { slot -> swaps(date, slot) }.map { it.revised(revs[it.id]) }
     }
 
     // ---- water glasses (250 ml each) ----

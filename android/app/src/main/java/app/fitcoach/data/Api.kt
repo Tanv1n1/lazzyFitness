@@ -34,12 +34,12 @@ object Api {
         }
     }
 
-    private fun profileBody(p: Profile, planSource: String): JSONObject {
+    private fun profileBody(p: Profile, planSource: String, avoid: List<String>): JSONObject {
         val t = PlanEngine.targets(p)
         return Store.profileTo(p).apply {
             remove("other")                       // free text stays on the phone
             if (p.other.isNotBlank()) put("conds", JSONArray(p.conds + "other"))
-            put("kcal", t.kcal); put("protein", t.protein); put("plan_source", planSource)
+            put("kcal", t.kcal); put("protein", t.protein); put("plan_source", planSource); put("avoid", JSONArray(avoid))
         }
     }
 
@@ -49,7 +49,7 @@ object Api {
         if (!store.consent) return false
         if (store.userId == null) {
             val r = call("POST", "/api/register",
-                profileBody(p, planSource).put("consent", true).put("invite", store.invite), store)
+                profileBody(p, planSource, store.avoid).put("consent", true).put("invite", store.invite), store)
             if (r.code != 200) {
                 store.syncNote = runCatching { JSONObject(r.body).getString("error") }.getOrDefault("Server said no (${r.code})")
                     .replaceFirstChar { it.uppercase() }
@@ -60,7 +60,7 @@ object Api {
             store.syncNote = ""
             true
         } else {
-            call("POST", "/api/profile", profileBody(p, planSource), store).code == 200
+            call("POST", "/api/profile", profileBody(p, planSource, store.avoid), store).code == 200
         }
     }.getOrElse { store.syncNote = "Could not reach the server. Your ticks are saved and will upload later."; false }
 
@@ -131,6 +131,8 @@ object Api {
                 .put("profile", Store.profileTo(p).apply { remove("username") }
                     .put("targets", JSONObject().put("kcal", t.kcal).put("protein", t.protein)))
             val r = call("POST", "/api/step-ai", body, store, timeoutMs = 150000)
+            // The server sends the person's "foods I don't want" list on every answer, even a failed one.
+            runCatching { JSONObject(r.body).optJSONArray("avoid") }.getOrNull()?.let { a -> store.avoid = (0 until a.length()).map { a.getString(it) } }
             when (r.code) {
                 200 -> {
                     val j = JSONObject(r.body)

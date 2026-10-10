@@ -158,7 +158,8 @@ fun StepDialog(
                     }
                     else -> {
                         Text(
-                            if (rewrites) "Say what should change, for example: no paneer, or a lighter dinner. The AI rewrites just this one."
+                            if (rewrites) "Say what should change, for example: no paneer, or a lighter dinner. The AI rewrites just this one. " +
+                                "Say \"I don't like bhakri\" and it is never suggested again."
                             else "Leave a note for your coach about this step.",
                             fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         OutlinedTextField(note, { note = it.take(200) }, label = { Text("Your request") },

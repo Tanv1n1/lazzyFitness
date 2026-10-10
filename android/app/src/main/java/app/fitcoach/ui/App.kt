@@ -43,6 +43,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -466,6 +467,7 @@ private fun MeScreen(store: Store, onEdit: () -> Unit, onRebuild: () -> Unit, on
         if (notes.isNotEmpty()) item {
             Panel("Health notes") { notes.forEach { Text("•  $it", fontSize = 13.sp, modifier = Modifier.padding(top = 3.dp)) } }
         }
+        item { AvoidPanel(store, plan?.source ?: "local") }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedButton(onClick = onEdit) { Text("Edit profile") }
@@ -497,6 +499,34 @@ private fun MeScreen(store: Store, onEdit: () -> Unit, onRebuild: () -> Unit, on
             },
             dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel") } },
         )
+    }
+}
+
+/** The foods this person never wants suggested. Learned from change requests ("I don't like bhakri"), and editable here. */
+@Composable
+private fun AvoidPanel(store: Store, planSource: String) {
+    val scope = rememberCoroutineScope()
+    var avoid by remember { mutableStateOf(store.avoid) }
+    var typed by remember { mutableStateOf("") }
+    val term = typed.lowercase().replace(Regex("[^a-z ]"), "").trim()
+    fun save(list: List<String>) {
+        avoid = list
+        store.avoid = list
+        if (store.consent) scope.launch { withContext(Dispatchers.IO) { Api.pushProfile(store, planSource) } }
+    }
+    Panel("Foods I don't want") {
+        if (avoid.isEmpty()) Text("None yet. Say \"I don't like bhakri\" when you change a meal, or add a food here.", fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        avoid.forEach { food ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(food, Modifier.weight(1f))
+                TextButton(onClick = { save(avoid - food) }) { Text("Remove") }
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(typed, { typed = it.take(30) }, label = { Text("Add a food") }, singleLine = true, modifier = Modifier.weight(1f))
+            TextButton(enabled = term.length >= 2, onClick = { save((avoid + term).distinct()); typed = "" }) { Text("Add") }
+        }
     }
 }
 
