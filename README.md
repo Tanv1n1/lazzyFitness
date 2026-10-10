@@ -5,6 +5,7 @@ Pune-focused diet and workout app.
 | Part | Folder | What it is |
 |---|---|---|
 | Android app | `android/` | Kotlin + Jetpack Compose. Onboarding, wake-up timeline, ticks, home-screen widget, meal reminders. The plan engine (`PlanEngine.kt`) lives in the app, so it works fully offline |
+| iPhone / web app | `backend/web/` | One page served by the backend at `/app`. Same plan engine, timeline, skip / swap / change, photo reading and water counter as the Android app. Testers add it to the Home Screen. No widget and no background reminders |
 | Backend + admin site | `backend/` | Python standard library + SQLite. User sync API, optional Claude plan endpoint, admin dashboard at `/admin` |
 | Hosting | `deploy/gcp/`, `deploy/railway/` | Setup script for a Google VM, and steps for Railway. `backend/Dockerfile` is what Railway builds |
 
@@ -12,8 +13,9 @@ Pune-focused diet and workout app.
 
 | Piece | State |
 |---|---|
-| Backend and admin site | Tested: `python3 backend/selftest.py` runs 5 users at once (35 checks, including skip and swap sync, water, the AI plan path and meal photo reading against a fake provider). Dashboard checked in a browser |
+| Backend and admin site | Tested: `python3 backend/selftest.py` runs 5 users at once (55 checks, including skip and swap sync, water, the AI plan path, meal photo reading against a fake provider, and the `/app` files). Dashboard checked in a browser |
 | Claude plan endpoint (`/api/plan`) | Written, not tested against the live API (no key was available) |
+| iPhone / web app | The plan engine was compared with the real Kotlin `PlanEngine.kt` on 8 profiles x 9 dates (752 lines, no differences). Onboarding, timeline, skip, swap, change request, photo, delete and the offline path were clicked through in a browser at phone width against a fake AI provider. **Not yet tried on an iPhone** |
 | Android app | Builds from the command line (Gradle 8.13, AGP 8.13.2). **Not yet run on a phone or emulator**: onboarding, timeline, skip and swap dialogs, photo reading, reminders and the widget are untested at runtime |
 | `deploy/gcp/setup.sh` | Syntax-checked only. Not run on a real VM |
 
@@ -64,6 +66,12 @@ message to a user) would need Firebase Cloud Messaging and is not included.
 1. Open `android/` in Android Studio. Set **Gradle JDK** to the bundled JetBrains Runtime 21 (Gradle cannot run on JDK 25).
 2. Run on a phone, or Build, Build Bundle(s) / APK(s), Build APK(s) and send `app-debug.apk` to testers (they allow "install unknown apps" once).
 3. Testers enter the server address and invite code on the last onboarding step. Phones need an HTTPS address: the Cloudflare tunnel from `run_test.sh`, or the permanent one from `deploy/gcp/`. The default `API_BASE` (`http://10.0.2.2:8080`) only reaches your Mac from an emulator.
+
+## iPhone and other browsers
+
+Open `https://<your server>/app` in Safari, tap Share, then Add to Home Screen, and open Lazy Fitness from the Home Screen. Sign up there: the Home Screen app keeps its own data, separate from Safari. The invite code is the same one the Android testers use. No Xcode, Apple account or App Store is needed.
+
+What it does not do, compared with Android: no home-screen widget, and no reminders while the app is closed (iOS only allows those for web apps through web push, which needs extra server work). It shows what is next when you open it. Data lives in the browser's storage, so clearing website data for the app clears the plan and ticks.
 
 ## How it works
 
