@@ -170,3 +170,19 @@ peanut | tbsp | 55 | roasted peanut, groundnut, shengdana
 roasted chana | handful | 110 | bhajka chana, phutana
 makhana | handful | 100 | roasted makhana, fox nut, phool makhana
 corn | piece | 140 | boiled corn, corn cob, bhutta, sweet corn
+
+# dishes the coach talks about that are a plate, not a single item
+egg bhurji pav | plate | 310 | egg bhurji and pav, anda bhurji pav
+keema pav | plate | 430 | kheema pav, mutton keema pav
+bun maska chai | plate | 340 | bun maska and chai
+pithla bhakri | plate | 370 | pithla, zunka bhakar, zunka bhakri, pithla bhakar
+varan bhaat | plate | 350 | varan bhat, dal bhaat
+idli sambar | plate | 255 | idli with sambar
+maharashtrian thali | plate | 850 | veg thali, thali, maharashtrian veg thali
+tambda rassa | bowl | 300 | tambda rassa gravy
+pandhra rassa | bowl | 250 | pandhra rassa gravy
+shengdana chutney bhakri | plate | 400 | peanut chutney bhakri
+bharli vangi | bowl | 180 | stuffed brinjal
+kothimbir vadi | piece | 50 | coriander vadi
+thecha | tsp | 10 | green chilli thecha
+aamras | bowl | 180 | mango pulp

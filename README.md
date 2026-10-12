@@ -13,7 +13,7 @@ Pune-focused diet and workout app.
 
 | Piece | State |
 |---|---|
-| Backend and admin site | Tested: `python3 backend/selftest.py` runs 5 users at once (72 checks, including skip and swap sync, water, the AI plan path, meal photo reading against a fake provider, the `/app` files, calorie pricing and the avoid list). Dashboard checked in a browser |
+| Backend and admin site | Tested: `python3 backend/selftest.py` runs 5 users at once (81 checks, including skip and swap sync, water, the AI plan path, meal photo reading against a fake provider, the `/app` files, calorie pricing and the avoid list). Dashboard checked in a browser |
 | Claude plan endpoint (`/api/plan`) | Written, not tested against the live API (no key was available) |
 | iPhone / web app | The plan engine was compared with the real Kotlin `PlanEngine.kt` on 8 profiles x 9 dates (752 lines, no differences). Onboarding, timeline, skip, swap, change request, photo, delete and the offline path were clicked through in a browser at phone width against a fake AI provider. **Not yet tried on an iPhone** |
 | Android app | Builds from the command line (Gradle 8.13, AGP 8.13.2). **Not yet run on a phone or emulator**: onboarding, timeline, skip and swap dialogs, photo reading, reminders and the widget are untested at runtime |
@@ -46,8 +46,10 @@ Optional extras:
 
 | Variable | Use |
 |---|---|
-| `AI_FALLBACK_MODELS` | comma-separated model ids. They are raced, not just queued: the next model starts at once if one fails, or alongside it if one is slow. First valid answer wins. A lone model is tried twice |
-| (photos) | photo reading uses the same chain. A model that reports "no food" is followed by the next one, since a model that cannot see the picture says that too |
+| (fallbacks) | `AI_FALLBACK_MODELS` and `AI_VISION_FALLBACK_MODELS` are comma-separated model ids. They are raced, not just queued: the next model starts at once if one fails, or alongside it if one is slow. First valid answer wins. A lone model is tried twice |
+| `AI_MODEL`, `AI_FALLBACK_MODELS` (text) | plans, rewrites, tips, calories and the coach chat. Put the best model in `AI_MODEL` |
+| `AI_VISION_MODEL`, `AI_VISION_FALLBACK_MODELS` | only meal photos need a model that can see, so they use this list (left empty, photos use the text models). A model that reports "no food" is followed by the next one, since a model that cannot see the picture says that too |
+| `CHAT_DAILY_LIMIT` | coach messages per person per day (default 40), counted apart from `AI_DAILY_LIMIT` |
 | `AI_HEDGE_SECONDS` | how long a slow model runs alone before the next one joins (default 20) |
 | `AI_MIN_GAP_SECONDS` | spacing between provider calls, for a requests-per-minute cap (`12.5` for 5 per minute) |
 
@@ -56,7 +58,7 @@ empty, the app quietly falls back to the offline planner and photo reading says 
 server log as `AI call failed: ...`.
 
 Limits for a small test: `INVITE_CODE`, `MAX_USERS` (10 in `run_test.sh`), `AI_DAILY_LIMIT` (20 AI calls per user per day,
-shared by plans, photo reads and step updates), admin lockout after 20 wrong tokens. Each AI call is one provider request.
+shared by plans, photo reads and step updates), `CHAT_DAILY_LIMIT` (40 coach messages), admin lockout after 20 wrong tokens. Each AI call is one provider request.
 
 Reminders are scheduled on the phone, so they work without a server or Firebase. Server-sent push (for example a coach
 message to a user) would need Firebase Cloud Messaging and is not included.
@@ -75,11 +77,13 @@ What it does not do, compared with Android: no home-screen widget, and no remind
 
 ## How it works
 
-- **Timeline** starts at wake time with 400 ml water. Workout, meals and sleep are spaced across the person's own wake and sleep times. Each meal lists foods to eat and to skip.
+- **Timeline** starts at wake time with 400 ml water. Workout, meals and sleep are spaced across the person's own wake and sleep times. Each meal lists foods to eat and to skip. When the AI plan is not available, the offline planner picks each day's meal from a start that depends on the person and the meal slot, so two people with the same profile do not get the same plate every day. Its pool is small, though, so real differences come from the AI plan and the coach, which are built from what each person has told the app.
 - **Reminders**: one alarm is armed for the next undone step. It shows the meal, what to eat, what to skip and a Done button, then arms the next one. Reboot, app update and clock changes re-arm it.
 - **Skip, swap, change**: on any step you can mark it skipped (with a reason) or say what you had instead. The AI then gives a short tip and, for a swap, estimates the calories. "Change this meal" (or workout) takes a request like "no paneer" and the AI rewrites just that step, with an Undo. For meals you can also choose or take a photo, and an AI vision model lists the food and estimates calories. You check and edit the result before saving. The photo is not stored, on the phone or the server.
 - **Calories**: what a person ate instead, a rewritten meal and a meal photo are priced from `backend/foods.txt`, a table of about 400 Pune food names with calories per portion (edit it freely; the server reads it at start). "2 samosas and a cup of chai" is read as quantities and priced from the table, so it does not depend on the AI. Only foods the table lacks go to the AI, which gives the calories of one unit; that answer is stored in the database (`foods` table, listed at `/admin/api/foods`) and reused, and the first estimate for a food is never overwritten. Calories on the timeline for planned meals are still the day's target split by meal, not summed from the food.
 - **Foods I don't want**: say "I don't like bhakri" (or "mujhe karela pasand nahi") when you change a meal and it is remembered for that person for good. A plain-text rule reads common phrasings and the AI reports the rest; one-off wishes like "no paneer today" are not remembered. The list is kept on the server, sent to the AI in every prompt, enforced on AI plans and rewrites (a reply that uses an avoided food is rejected), and applied by both apps when they pick the day's meals. People see and edit it on the Me tab, and the admin sees it in the user drawer. If a person excludes nearly everything for a meal slot, a meal is shown anyway rather than leaving a gap.
+- **Coach chat**: a Coach tab on both apps, for questions like "I'm hungry at 4, what should I eat near me?". Every reply is written from what the server knows about that one person: profile and targets, health flags, foods they never want, notes they told the coach (area, budget, likes; shown and editable on the Me tab), their last 7 days (skips, swaps, water), today's timeline and clock, the talk so far, and local knowledge picked for the question from the person's city (`backend/cities/<city>/places.txt` and `dishes.txt`, with calories from `foods.txt`). The picks differ from person to person, a reply that breaks the diet or names an avoided food is rejected, and the coach asks one short question when something that would change its advice is unknown. Those notes also feed plan building and meal rewrites, so plans are built around the person. Pune is the first city: 43 eateries (with an area each) compiled on 11 Oct 2026 from public guides, not scraped from any one site. The guides disagree on some addresses and go stale, so the coach is told to name only listed places and to say hours and menus change. Add a place with one line in that city's `places.txt`.
+- **Adding a city** needs no code. Copy `backend/cities/pune/` to `backend/cities/<newcity>/` (lowercase id), then edit `city.txt` (name, region, local cuisine), `places.txt`, `dishes.txt`, and optionally add a `foods.txt` with that city's calorie lines. The server notices new and changed files by itself, publishes the list at `GET /api/cities`, and both apps show a "My city" choice once there is more than one. To add cities without a deploy, put them in a folder on a mounted volume and set `CITIES_DIR` to it (`DEFAULT_CITY` sets the fallback, `pune` by default). Prompts, the coach, calorie pricing and photo reading all use the person's city. Not yet city-specific: the offline quick plan's meal library and skip lists in the apps are still Pune's, so a person in another city gets Pune dishes there until the AI plan is on.
 - **Water**: a glass counter on the Today screen and four water reminders between breakfast and dinner, each with a "Drank a glass" button. Reminders stop once the day's target is reached.
 - **Last 7 days** card on the Me tab: check-in days, average completion, skips, swaps and the step skipped most.
 - **Widget**: progress, streak, next step and a Done button.

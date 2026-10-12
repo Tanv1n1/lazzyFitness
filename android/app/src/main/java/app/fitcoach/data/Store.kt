@@ -68,6 +68,34 @@ class Store(ctx: Context) {
         get() = sp.getString("avoid", null)?.let { runCatching { strings(JSONArray(it)) }.getOrNull() } ?: emptyList()
         set(v) = sp.edit().putString("avoid", JSONArray(v).toString()).apply()
 
+    /** What the person told their coach (area, budget, likes). The server keeps the same list and sends it back after every chat message. */
+    var facts: List<String>
+        get() = sp.getString("facts", null)?.let { runCatching { strings(JSONArray(it)) }.getOrNull() } ?: emptyList()
+        set(v) = sp.edit().putString("facts", JSONArray(v).toString()).apply()
+
+    /** The talk with the coach for display, newest last: ("user" or "coach") to the text. The server keeps its own copy for context. */
+    var chat: List<Pair<String, String>>
+        get() = runCatching { JSONArray(sp.getString("chat", "[]")).let { a -> (0 until a.length()).map { a.getJSONArray(it).let { p -> p.getString(0) to p.getString(1) } } } }
+            .getOrDefault(emptyList())
+        set(v) = sp.edit().putString("chat", JSONArray(v.takeLast(40).map { JSONArray(listOf(it.first, it.second)) }).toString()).apply()
+
+    /** The city whose food the coach and AI plans use (an id from the server's list), or null for the server's default. */
+    var city: String?
+        get() = sp.getString("city", null)
+        set(v) = sp.edit().putString("city", v).apply()
+
+    /** The cities the server has food data for, as (id, name), and which one is the default. The server publishes them, so a new city needs no change here. */
+    var cities: List<Pair<String, String>>
+        get() = runCatching { JSONArray(sp.getString("cities", "[]")).let { a -> (0 until a.length()).map { a.getJSONArray(it).let { p -> p.getString(0) to p.getString(1) } } } }
+            .getOrDefault(emptyList())
+        set(v) = sp.edit().putString("cities", JSONArray(v.map { JSONArray(listOf(it.first, it.second)) }).toString()).apply()
+    var defaultCity: String
+        get() = sp.getString("default_city", null) ?: "pune"
+        set(v) = sp.edit().putString("default_city", v).apply()
+
+    /** The name to show for the person's city. */
+    val cityName: String get() = cities.firstOrNull { it.first == (city ?: defaultCity) }?.second ?: "Pune"
+
     var profile: Profile?
         get() = sp.getString("profile", null)?.let { runCatching { profileFrom(JSONObject(it)) }.getOrNull() }
         set(v) = sp.edit().putString("profile", v?.let { profileTo(it).toString() }).apply()

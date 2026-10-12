@@ -1,6 +1,7 @@
 FROM python:3.12-slim
 WORKDIR /app
-COPY server.py foods.py foods.txt ./
+COPY server.py foods.py foods.txt coach.py ./
+COPY cities ./cities
 COPY admin ./admin
 COPY web ./web
 ENV HOST=0.0.0.0 PYTHONUNBUFFERED=1
