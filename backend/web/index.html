@@ -57,6 +57,10 @@ textarea{resize:none}
 @keyframes s{to{transform:rotate(360deg)}}
 .stat{display:flex;justify-content:space-between;gap:10px;padding:2px 0}
 .center{min-height:80vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:6px}
+.bubble{max-width:88%;padding:10px 12px;border-radius:14px;margin-top:8px;white-space:pre-wrap;overflow-wrap:anywhere}
+.bubble.user{margin-left:auto;background:var(--pri);color:var(--onpri);border-bottom-right-radius:4px}
+.bubble.coach{background:var(--card);border-bottom-left-radius:4px}
+.composer{position:sticky;bottom:calc(58px + env(safe-area-inset-bottom));background:var(--bg);padding:10px 0 8px;margin-top:8px}
 .tip{background:var(--card);border:1px dashed var(--line);border-radius:10px;padding:10px 12px;font-size:13px;color:var(--mut)}
 </style>
 </head>
@@ -336,6 +340,13 @@ function workoutFor(p, date) {
   return { id: "workout", kind: "workout", timeMin: 0, title: WTITLE[key], name: (key === "rest" ? 30 : 40) + " min", exercises: ex, note: notes.join(" ") || null };
 }
 
+/** The same small number for the same text on every device: the Kotlin and web versions use the same arithmetic. */
+function stable(s) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (Math.imul(h, 31) + s.charCodeAt(i)) & 0x7fffffff;
+  return h;
+}
+
 /** One day as a list of steps. [swaps] says how many times a slot's meal was swapped, which moves it along the pool. */
 function dayPlan(p, plan, date, swaps, avoid = []) {
   const sch = schedule(p), t = targets(p), idx = epochDay(date), steps = [];
@@ -361,7 +372,8 @@ function dayPlan(p, plan, date, swaps, avoid = []) {
       let pool = own.filter(ok);
       if (!pool.length) pool = localPlan(p).meals[slot].filter(ok);
       if (!pool.length) pool = own.length ? own : localPlan(p).meals[slot];
-      const n = pool.length, m = pool[(((idx + IDS.indexOf(slot) + swaps(slot)) % n) + n) % n];
+      // each person cycles each meal slot from their own start, so the same profile does not mean the same plate
+      const n = pool.length, who = stable(p.username + ":" + slot) % 1000, m = pool[(((idx + IDS.indexOf(slot) + swaps(slot) + who) % n) + n) % n];
       const kcal = Math.round((t.kcal * (SHARE[slot] || 0) / 100) / 10) * 10;
       steps.push({ id: slot, kind: "meal", timeMin: time, title: SLOT_TITLE[slot], kcal, name: m.name, eat: m.items, skip: m.skip, exercises: [] });
     }
@@ -374,6 +386,8 @@ const glassTarget = t => Math.min(16, Math.max(6, Math.round(t.waterL * 1000 / 2
 
 // ---------------------------------------------------------------- storage (one JSON blob in localStorage)
 let S = (() => { try { return JSON.parse(localStorage.getItem("lf")) || {}; } catch { return {}; } })();
+/** The cities the server has food data for, and which one this person chose. The server publishes the list, so a new city needs no change here. */
+const cityName = () => ((S.cities || []).find(c => c.id === (S.city || S.defaultCity)) || {}).name || "Pune";
 const save = () => { try { localStorage.setItem("lf", JSON.stringify(S)); } catch { /* private mode: it just will not be remembered */ } };
 const slot = (key, date) => ((S[key] ??= {})[date] ??= {});
 const done = date => new Set((S.log || {})[date] || []);
@@ -450,7 +464,7 @@ async function pushProfile(planSource) {
     const p = S.profile, t = targets(p);
     if (!S.consent) return false;
     const { other, ...base } = profileJson(p);
-    const body = { ...base, conds: other ? [...p.conds, "other"] : p.conds, kcal: t.kcal, protein: t.protein, plan_source: planSource, avoid: S.avoid || [] };
+    const body = { ...base, conds: other ? [...p.conds, "other"] : p.conds, kcal: t.kcal, protein: t.protein, plan_source: planSource, avoid: S.avoid || [], facts: S.facts || [], city: S.city };
     if (!S.userId) {
       const r = await call("POST", "/api/register", { ...body, consent: true, invite: S.invite });
       if (r.code !== 200) {
@@ -500,7 +514,8 @@ async function ai(path, body, ms) {
   if (!S.consent || !S.userId) return { error: needsSharing };
   try {
     const r = await call("POST", path, body, ms), j = json(r.body);
-    if (Array.isArray(j.avoid)) { S.avoid = j.avoid; save(); }       // the server sends "foods I don't want" on every answer, even a failed one
+    for (const key of ["avoid", "facts"]) if (Array.isArray(j[key])) S[key] = j[key];   // the server sends both lists on every chat and rewrite answer
+    save();
     return r.code === 200 ? j : { error: aiFailure(r.code, r.body) };
   } catch { return { error: "Could not reach the server." }; }
 }
@@ -667,6 +682,7 @@ function onboardView() {
           "To write your meal plan, the server also sends your age, sex, height, weight, goal, diet, medical flags and any note you typed, " +
           "but never your username, to a third-party AI service. A meal photo you choose to analyse goes to the same service and is not saved. " +
           "Skipped steps, what you ate instead and your change requests are shared with your coach. " +
+          "What you type to the coach, and short notes it keeps about you (like your area and what you like to eat), go to the same AI service. " +
           "Leave this off and everything stays on your phone, with the offline planner. " +
           "You can delete your data from the Me tab, but not what the AI service has already received."))),
     f.consent && inp("Invite code", "invite", { max: 40 }),
@@ -710,7 +726,7 @@ function finishBuild(plan) {
 function buildingView() {
   return h("div", { class: "center" },
     h("div", { class: "spin" }), h("h2", { style: "margin-top:14px" }, "Building your plan"),
-    h("p", { class: "mut" }, "Counting calories and picking Pune-friendly meals"),
+    h("p", { class: "mut" }, "Counting calories and picking meals that suit you"),
     S.consent && h("p", { class: "xs mut", style: "margin-top:16px" }, "Asking the AI for meals that fit you. This can take up to a minute."),
     S.consent && h("button", { class: "btn link", onclick: () => finishBuild(localPlan(S.profile)) }, "Use the quick plan now"));
 }
@@ -718,8 +734,8 @@ function buildingView() {
 // ---- main shell
 function mainView() {
   const tabBtn = (i, text) => h("button", { class: tab === i ? "on" : "", onclick: () => { tab = i; render(); window.scrollTo(0, 0); } }, text);
-  const bar = h("div", { class: "tabs" }, tabBtn(0, "Today"), tabBtn(1, "Me"));
-  return h("div", {}, tab === 0 ? todayView() : meView(), bar, dlg && dialogView());
+  const bar = h("div", { class: "tabs" }, tabBtn(0, "Today"), tabBtn(1, "Coach"), tabBtn(2, "Me"));
+  return h("div", {}, [todayView, coachView, meView][tab](), bar, dlg && dialogView());
 }
 
 function detail(s) {
@@ -785,7 +801,7 @@ function todayView() {
   const notes = healthNotes(p);
   return h("div", { style: "padding-top:20px" },
     h("h1", { style: "font-size:24px;font-weight:800" }, `${greet}, ${p.username}`),
-    h("p", { class: "mut" }, parse(date).toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" }) + "  ·  Pune"),
+    h("p", { class: "mut" }, parse(date).toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" }) + "  ·  " + cityName()),
     h("div", { class: "row", style: "margin-top:12px" }, h("b", { class: "grow" }, `${dn.size} of ${steps.length} done`),
       h("span", { class: "sm mut" }, st > 0 ? `${st} day streak` : `A day counts at ${PASS} steps`)),
     h("div", { class: "bar", style: "margin-top:6px" }, h("i", { style: `width:${dn.size / steps.length * 100}%` })),
@@ -822,9 +838,15 @@ function meView() {
       w.mostSkipped && stat("Skipped most", STEP_NAMES[w.mostSkipped] || w.mostSkipped)),
     panel("Your plan", h("p", {}, plan?.summary || ""),
       h("p", { class: "xs mut", style: "margin-top:4px" }, plan?.source === "ai" ? "Meals written by an AI service for your profile" : "Built by the offline planner")),
-    watch.length > 0 && panel("Watch out for, in Pune", watch.map(x => h("p", { style: "margin-top:3px" }, "•  " + x))),
+    watch.length > 0 && panel("Watch out for, in " + cityName(), watch.map(x => h("p", { style: "margin-top:3px" }, "•  " + x))),
     notes.length > 0 && panel("Health notes", notes.map(x => h("p", { class: "sm", style: "margin-top:3px" }, "•  " + x))),
-    avoidPanel(panel),
+    S.cities && S.cities.length > 1 && panel("My city",
+      chips(S.cities.map(c => [c.id, c.name]), new Set([S.city || S.defaultCity]), id => { S.city = id; save(); render(); if (S.consent) pushProfile(S.plan?.source || "local"); }),
+      h("p", { class: "xs mut", style: "margin-top:6px" }, "The coach and AI plans use this city's food and places. Without the AI, the quick plan uses Pune dishes.")),
+    listPanel(panel, "Foods I don't want", "avoid", "None yet. Say \"I don't like bhakri\" when you change a meal or talk to your coach, or add a food here.",
+      "Add a food, like paneer", s => s.toLowerCase().replace(/[^a-z ]/g, "").trim()),
+    listPanel(panel, "What my coach remembers", "facts", "Nothing yet. Tell your coach where you live, what you love to eat or how you cook.",
+      "Add something, like: I work in Hinjewadi", s => s.trim().slice(0, 100)),
     h("div", {},
       h("div", { class: "row" },
         h("button", { class: "btn", onclick: startOnboarding }, "Edit profile"),
@@ -836,18 +858,56 @@ function meView() {
       h("button", { class: "btn link err", onclick: () => { dlg = { mode: "delete", busy: false, error: "" }; render(); } }, "Delete my data")));
 }
 
-/** The foods this person never wants suggested. Learned from change requests ("I don't like bhakri"), and editable here. */
-function avoidPanel(panel) {
-  const list = S.avoid || [];
-  const set = next => { S.avoid = next; save(); render(); if (S.consent) pushProfile(S.plan?.source || "local"); };
-  const field = h("input", { type: "text", maxlength: 30, placeholder: "Add a food, like paneer", autocomplete: "off",
-    onkeydown: e => { if (e.key === "Enter") add(); } });
-  const add = () => { const t = field.value.toLowerCase().replace(/[^a-z ]/g, "").trim(); if (t.length >= 2) set([...new Set([...list, t])]); };
-  return panel("Foods I don't want",
-    list.length ? list.map(food => h("div", { class: "row" }, h("span", { class: "grow" }, food),
-      h("button", { class: "btn link", onclick: () => set(list.filter(x => x !== food)) }, "Remove")))
-      : h("p", { class: "xs mut" }, "None yet. Say \"I don't like bhakri\" when you change a meal, or add a food here."),
+/** A list the person can see and edit: the foods they never want suggested, or what their coach remembers. Both also grow from chat. */
+function listPanel(panel, title, key, empty, placeholder, clean) {
+  const list = S[key] || [];
+  const set = next => { S[key] = next; save(); render(); if (S.consent) pushProfile(S.plan?.source || "local"); };
+  const field = h("input", { type: "text", maxlength: 100, placeholder, autocomplete: "off", onkeydown: e => { if (e.key === "Enter") add(); } });
+  const add = () => { const t = clean(field.value); if (t.length >= 2) set([...new Set([...list, t])]); };
+  return panel(title,
+    list.length ? list.map(item => h("div", { class: "row" }, h("span", { class: "grow" }, item),
+      h("button", { class: "btn link", onclick: () => set(list.filter(x => x !== item)) }, "Remove")))
+      : h("p", { class: "xs mut" }, empty),
     h("div", { class: "row", style: "margin-top:8px" }, field, h("button", { class: "btn", onclick: add }, "Add")));
+}
+
+// ---- the Coach tab: a chat that knows this person, their day and Pune
+let chatBusy = false, chatDraft = "", chatError = "";
+const STARTERS = ["What should I eat right now?", "Where can I eat out near me?", "Am I on track this week?", "What should I have for dinner?"];
+
+/** Today as the coach needs it: the clock, the plan with what is done, skipped or swapped, and water. */
+function todayForChat() {
+  const now = new Date(), date = iso(activeDate(S.profile, now)), dn = done(date), ents = entries(date);
+  const state = s => dn.has(s.id) ? "done" : ents[s.id]?.s === "skipped" ? "skipped" : ents[s.id]?.s === "replaced" ? "ate instead: " + ents[s.id].text.slice(0, 40) : "pending";
+  return { time: `${pad(now.getHours())}:${pad(now.getMinutes())}`, water: water(date), glasses: glassTarget(targets(S.profile)),
+    steps: daySteps(date).map(s => ({ time: fmt(s.timeMin), title: s.title, name: s.kind === "meal" ? s.name : "", state: state(s) })) };
+}
+const toBottom = () => setTimeout(() => window.scrollTo(0, document.body.scrollHeight), 50);
+
+async function send(text) {
+  text = text.trim();
+  if (!text || chatBusy) return;
+  (S.chat ||= []).push({ role: "user", text });
+  chatDraft = ""; chatBusy = true; chatError = ""; save(); render(); toBottom();
+  const j = await ai("/api/chat", { message: text, profile: aiProfile(S.profile), today: todayForChat() }, 150000);
+  chatBusy = false;
+  if (j.error) chatError = j.error; else S.chat.push({ role: "coach", text: j.reply });
+  S.chat = S.chat.slice(-40); save(); render(); toBottom();
+}
+
+function coachView() {
+  const msgs = S.chat || [], ready = S.consent && S.userId;
+  const box = h("input", { type: "text", maxlength: 500, placeholder: "Ask your coach", autocomplete: "off", value: chatDraft, disabled: !ready || chatBusy,
+    oninput: e => { chatDraft = e.target.value; }, onkeydown: e => { if (e.key === "Enter") send(chatDraft); } });
+  return h("div", { style: "padding-top:20px" },
+    h("h1", { style: "font-size:24px;font-weight:800" }, "Your coach"),
+    h("p", { class: "sm mut" }, `It knows your plan, your week and ${cityName()}'s food. Tell it what you like and it remembers.`),
+    !ready && h("div", { class: "tip", style: "margin-top:12px" }, "Turn on sharing under Me, Edit profile, so the coach can talk to you."),
+    msgs.map(m => h("div", { class: "bubble " + m.role }, m.text)),
+    !msgs.length && ready && h("div", { class: "chips", style: "margin-top:14px" }, STARTERS.map(q => h("button", { class: "chip", onclick: () => send(q) }, q))),
+    chatBusy && h("div", { class: "row sm mut", style: "margin-top:10px" }, h("div", { class: "spin sm" }), "Thinking about your day..."),
+    chatError && h("p", { class: "sm err", style: "margin-top:8px" }, chatError),
+    h("div", { class: "row composer" }, box, h("button", { class: "btn pri", disabled: !ready || chatBusy, onclick: () => send(chatDraft) }, "Send")));
 }
 
 // ---- the one dialog for skip, replace, change request and delete
@@ -969,6 +1029,7 @@ function dialogView() {
 
 // ---------------------------------------------------------------- start
 if (!S.profile) startOnboarding(); else { render(); if (S.consent) syncRecent(); }
+fetch("/api/cities").then(r => r.json()).then(j => { S.cities = j.cities; S.defaultCity = j.default; save(); if (screen === "main" && !dlg) render(); }).catch(() => {});
 document.addEventListener("visibilitychange", () => {                        // "up next" refreshes when the app is reopened, never while typing in a dialog
   if (document.visibilityState === "visible" && screen === "main" && !dlg) { render(); if (S.consent) syncRecent(); }
 });

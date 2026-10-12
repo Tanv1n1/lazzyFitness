@@ -30,6 +30,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.AlertDialog
@@ -125,7 +126,7 @@ fun FitApp() {
 private fun Building(store: Store, onFinished: () -> Unit) {
     val ctx = LocalContext.current
     val profile = store.profile ?: return
-    val lines = listOf("Counting calories for you", "Picking Pune-friendly meals", "Checking your health notes", "Laying out your timeline")
+    val lines = listOf("Counting calories for you", "Picking meals that suit you", "Checking your health notes", "Laying out your timeline")
     var line by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(Unit) {
@@ -167,12 +168,13 @@ private fun MainShell(store: Store, onEdit: () -> Unit, onRebuild: () -> Unit, o
         bottomBar = {
             NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
                 NavigationBarItem(tab == 0, { tab = 0 }, { Icon(Icons.Filled.Home, null) }, label = { Text("Today") })
-                NavigationBarItem(tab == 1, { tab = 1 }, { Icon(Icons.Filled.Person, null) }, label = { Text("Me") })
+                NavigationBarItem(tab == 1, { tab = 1 }, { Icon(Icons.Filled.Face, null) }, label = { Text("Coach") })
+                NavigationBarItem(tab == 2, { tab = 2 }, { Icon(Icons.Filled.Person, null) }, label = { Text("Me") })
             }
         },
     ) { pad ->
         Box(Modifier.padding(pad).fillMaxSize()) {
-            if (tab == 0) TodayScreen(store) else MeScreen(store, onEdit, onRebuild, onReset)
+            when (tab) { 0 -> TodayScreen(store); 1 -> CoachScreen(store); else -> MeScreen(store, onEdit, onRebuild, onReset) }
         }
     }
 }
@@ -231,7 +233,7 @@ private fun TodayScreen(store: Store) {
         item {
             Column(Modifier.padding(top = 20.dp, bottom = 12.dp)) {
                 Text("$greet, ${p.username}", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold)
-                Text(view.date.format(DateTimeFormatter.ofPattern("EEEE, d MMMM")) + "  ·  Pune",
+                Text(view.date.format(DateTimeFormatter.ofPattern("EEEE, d MMMM")) + "  ·  " + store.cityName,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(12.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -426,6 +428,8 @@ private fun MeScreen(store: Store, onEdit: () -> Unit, onRebuild: () -> Unit, on
     val scope = rememberCoroutineScope()
     var confirmDelete by remember { mutableStateOf(false) }
     var note by remember { mutableStateOf("") }
+    var cities by remember { mutableStateOf(store.cities) }
+    LaunchedEffect(Unit) { withContext(Dispatchers.IO) { Api.loadCities(store) }; cities = store.cities }
 
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
@@ -461,13 +465,30 @@ private fun MeScreen(store: Store, onEdit: () -> Unit, onRebuild: () -> Unit, on
         }
         val watch = plan?.watchlist.orEmpty()
         if (watch.isNotEmpty()) item {
-            Panel("Watch out for, in Pune") { watch.forEach { Text("•  $it", fontSize = 14.sp, modifier = Modifier.padding(top = 3.dp)) } }
+            Panel("Watch out for, in ${store.cityName}") { watch.forEach { Text("•  $it", fontSize = 14.sp, modifier = Modifier.padding(top = 3.dp)) } }
         }
         val notes = PlanEngine.healthNotes(p)
         if (notes.isNotEmpty()) item {
             Panel("Health notes") { notes.forEach { Text("•  $it", fontSize = 13.sp, modifier = Modifier.padding(top = 3.dp)) } }
         }
-        item { AvoidPanel(store, plan?.source ?: "local") }
+        if (cities.size > 1) item {
+            Panel("My city") {
+                Chips(cities, setOf(store.city ?: store.defaultCity)) { id ->
+                    store.city = id; cities = store.cities
+                    if (store.consent) scope.launch { withContext(Dispatchers.IO) { Api.pushProfile(store, plan?.source ?: "local") } }
+                }
+                Text("The coach and AI plans use this city's food and places. Without the AI, the quick plan uses Pune dishes.", fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
+            }
+        }
+        item {
+            ListPanel("Foods I don't want", "None yet. Say \"I don't like bhakri\" when you change a meal or talk to your coach, or add a food here.",
+                "Add a food", store.avoid, { store.avoid = it }, store, plan?.source ?: "local") { it.lowercase().replace(Regex("[^a-z ]"), "").trim() }
+        }
+        item {
+            ListPanel("What my coach remembers", "Nothing yet. Tell your coach where you live, what you love to eat or how you cook.",
+                "Add something", store.facts, { store.facts = it }, store, plan?.source ?: "local") { it.trim().take(100) }
+        }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedButton(onClick = onEdit) { Text("Edit profile") }
@@ -502,30 +523,30 @@ private fun MeScreen(store: Store, onEdit: () -> Unit, onRebuild: () -> Unit, on
     }
 }
 
-/** The foods this person never wants suggested. Learned from change requests ("I don't like bhakri"), and editable here. */
+/** A list the person can see and edit: the foods they never want suggested, or what their coach remembers. Both also grow from chat. */
 @Composable
-private fun AvoidPanel(store: Store, planSource: String) {
+private fun ListPanel(title: String, empty: String, label: String, initial: List<String>, onSet: (List<String>) -> Unit, store: Store,
+                      planSource: String, clean: (String) -> String) {
     val scope = rememberCoroutineScope()
-    var avoid by remember { mutableStateOf(store.avoid) }
+    var items by remember { mutableStateOf(initial) }
     var typed by remember { mutableStateOf("") }
-    val term = typed.lowercase().replace(Regex("[^a-z ]"), "").trim()
+    val term = clean(typed)
     fun save(list: List<String>) {
-        avoid = list
-        store.avoid = list
+        items = list
+        onSet(list)
         if (store.consent) scope.launch { withContext(Dispatchers.IO) { Api.pushProfile(store, planSource) } }
     }
-    Panel("Foods I don't want") {
-        if (avoid.isEmpty()) Text("None yet. Say \"I don't like bhakri\" when you change a meal, or add a food here.", fontSize = 12.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
-        avoid.forEach { food ->
+    Panel(title) {
+        if (items.isEmpty()) Text(empty, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        items.forEach { item ->
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(food, Modifier.weight(1f))
-                TextButton(onClick = { save(avoid - food) }) { Text("Remove") }
+                Text(item, Modifier.weight(1f))
+                TextButton(onClick = { save(items - item) }) { Text("Remove") }
             }
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(typed, { typed = it.take(30) }, label = { Text("Add a food") }, singleLine = true, modifier = Modifier.weight(1f))
-            TextButton(enabled = term.length >= 2, onClick = { save((avoid + term).distinct()); typed = "" }) { Text("Add") }
+            OutlinedTextField(typed, { typed = it.take(100) }, label = { Text(label) }, singleLine = true, modifier = Modifier.weight(1f))
+            TextButton(enabled = term.length >= 2, onClick = { save((items + term).distinct()); typed = "" }) { Text("Add") }
         }
     }
 }

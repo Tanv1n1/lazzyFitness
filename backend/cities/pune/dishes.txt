@@ -1,0 +1,43 @@
+# Pune dishes the coach knows, with a plain note on what to watch. One per line:  dish | meal | tags | note
+# meal: breakfast, snack, meal, sweet or drink. tags (what the dish is heavy in): sugar, highgi, salt, fried, spicy, dairy, gluten, egg, meat.
+# For a person with diabetes or PCOS the coach is warned about sugar and highgi, for BP or kidney about salt, for cholesterol about fried,
+# for acidity about spicy, for lactose about dairy, for gluten about gluten. General guidance, not medical advice.
+
+misal pav | breakfast | fried,salt,spicy,gluten | Sprout usal under a spicy tarri and crunchy farsan, with pav. The tarri and farsan are where the oil and salt hide: ask for less tarri, skip extra farsan, take one pav not two.
+vada pav | snack | fried,gluten,highgi | A fried potato vada in a pav. Easy to over-eat: one is a snack, two is a meal.
+sabudana khichdi | breakfast | highgi | Tapioca pearls with peanuts. Filling but fast carbs, so keep to one plate and add curd or sprouts.
+sabudana vada | snack | fried,highgi | Fried tapioca patties. One or two, or make them air-fried at home.
+poha | breakfast | highgi | Flattened rice with onion and peanuts. Light on the stomach; add sprouts, curd or an egg for protein.
+thalipeeth | breakfast | | Multigrain bhajani flatbread. One of the best Pune breakfasts for protein and fibre, best with curd.
+matki usal | meal | | Moth bean sprout curry, good protein and fibre. Go easy on the oil in the tadka.
+bhakri | meal | | Jowar or bajra flatbread, gluten-free and fibre-rich. Pair with dal, usal or pithla.
+pithla bhakri | meal | | Gram-flour curry with bhakri, an everyday Maharashtrian meal. Moderate the oil.
+zunka bhakar | meal | | Dry gram-flour dish with bhakri. Filling, a little oily.
+varan bhaat | meal | highgi | Dal and rice with ghee. The rice portion and the ghee decide the calories: ask for a small bowl of rice.
+amti | meal | | Maharashtrian dal with goda masala and kokum or jaggery. Watch the rice it comes with.
+sol kadhi | drink | | Kokum and coconut milk drink, dairy-free and cooling. A glass is about 110 kcal.
+puran poli | sweet | sugar,highgi,gluten | Flatbread stuffed with jaggery and chana dal, plus ghee. A festival treat: one piece, not for days when sugar is a concern.
+modak | sweet | sugar | Steamed modak is lighter than fried. Count it as a sweet.
+shrikhand | sweet | sugar,dairy | Strained curd sweetened with sugar. A small bowl is about 250 kcal.
+mastani | sweet | sugar,dairy | Thick milkshake with ice cream, around 400 kcal. An occasional treat.
+bhakarwadi | snack | fried,salt | Spicy fried spirals. A small handful, not the packet.
+kanda bhaji | snack | fried | Onion fritters. Have two or three pieces, not a plate.
+bun maska chai | breakfast | gluten,dairy,highgi | Irani cafe classic: a buttery bun with sweet milk tea, easily 350 kcal. Ask for less butter or no sugar in the chai.
+keema pav | meal | fried,gluten,meat | Spiced mince with pav. Good protein, but oily: one pav and skip the extra oil on top.
+egg bhurji pav | breakfast | gluten,egg | Spiced scrambled eggs. Good protein; ask for less oil and take one pav.
+biryani | meal | highgi,fried | A restaurant plate is often 500 kcal or more. Half a plate with raita and salad works better.
+tambda rassa | meal | spicy,fried,meat | The red, oily, very spicy Kolhapuri gravy. Not for acidity.
+pandhra rassa | meal | meat | The milder white Kolhapuri gravy, coconut and spice based. The gentler choice.
+idli sambar | breakfast | | Steamed and light: idli is about 55 kcal each, with sambar for protein.
+dosa | breakfast | | Plain dosa is about 135 kcal, masala dosa about 250. Ragi or plain dosa with sambar beats the butter masala.
+pav bhaji | meal | gluten,dairy,fried | Mashed vegetables cooked in a lot of butter. Ask for less butter, extra bhaji and one pav.
+pani puri | snack | highgi,fried | About 35 kcal a piece, so six is around 210. Pick a clean stall.
+bhel | snack | highgi,fried | Puffed rice chaat, about 300 kcal a plate. Ask for less sev and sweet chutney.
+ragda pattice | snack | fried,highgi | Potato patties with white-pea gravy, about 350 kcal a plate.
+dabeli | snack | fried,highgi,gluten | A sweet-spicy potato filling in a bun with peanuts. Around 250 kcal each.
+aamras | sweet | sugar,highgi | Mango pulp, in season. Keep to a small katori and skip it on high-sugar days.
+thecha | meal | spicy,salt | Green chilli and garlic chutney. A little goes a long way, not for acidity.
+bharli vangi | meal | fried | Stuffed brinjal curry. Moderate the oil.
+kothimbir vadi | snack | fried | Coriander gram-flour squares. Steamed is much lighter than shallow-fried.
+shengdana chutney bhakri | meal | | Peanut chutney with bhakri, a common rural breakfast. Rich in calories from the peanuts.
+maharashtrian thali | meal | highgi,fried,salt | Many small dishes with unlimited refills. The calories sit in the rice, puri and sweet: take bhakri, usal and bhaji, one sweet.

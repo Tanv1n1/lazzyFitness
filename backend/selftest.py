@@ -75,7 +75,11 @@ class FakeProvider(BaseHTTPRequestHandler):
         fake_seen.append((self.path, self.headers.get("Authorization"), body))
         content = json.loads(body)["messages"][0]["content"]
         prompt = content if isinstance(content, str) else ""
-        if "Estimate the calories of ONE unit" in prompt:           # the server asks about foods its tables do not know
+        if "personal food and fitness coach" in prompt:             # a chat message
+            reply = {"reply": "Try the ragi dosa.", "remember": ["lives in Baner"], "avoid": []}
+            if "bad chicken" in prompt:
+                reply["reply"] = "Have the chicken biryani."
+        elif "Estimate the calories of ONE unit" in prompt:         # the server asks about foods its tables do not know
             asked = json.loads(prompt.split("Foods: ")[1].split("\n")[0])
             reply = {"foods": [{"food": f["food"], "unit": "glass", "kcal": 210} for f in asked]}
         elif "Revise ONE meal" in body and 'Request: "mujhe tinda' in prompt:   # a request the plain-text rule cannot read, so the model reports it
@@ -150,10 +154,17 @@ def user_session(i):
 
 def main():
     tmp = tempfile.mkdtemp()
+    cities = os.path.join(tmp, "cities")                 # a folder of extra cities, like a mounted volume on the server
+    os.makedirs(os.path.join(cities, "testville"))
+    for name, text in (("city.txt", "name: Testville\nregion: Testland\ncuisine: test dishes (zorba, flurp)\n"),
+                       ("places.txt", "Testville Dhaba | Old Quarter | veg | ₹ | zorba thali | a test place\n"),
+                       ("dishes.txt", "zorba | meal | | A test dish.\n"),
+                       ("foods.txt", "zorba thali | plate | 777 | zorba plate\n")):
+        open(os.path.join(cities, "testville", name), "w", encoding="utf-8").write(text)
     env = {**os.environ, "FITCOACH_DB": os.path.join(tmp, "t.db"), "ADMIN_TOKEN": ADMIN, "PORT": str(PORT),
            "INVITE_CODE": INVITE, "MAX_USERS": "5", "AI_DAILY_LIMIT": "4",
            "AI_BASE_URL": f"http://127.0.0.1:{FAKE_PORT}/v1", "AI_API_KEY": "test-key", "AI_MODEL": "bad-model",
-           "AI_FALLBACK_MODELS": "fake-model", "AI_HEDGE_SECONDS": "1"}
+           "AI_FALLBACK_MODELS": "fake-model", "AI_VISION_MODEL": "vision-model", "CHAT_DAILY_LIMIT": "5", "CITIES_DIR": cities, "AI_HEDGE_SECONDS": "1"}
     fake = ThreadingHTTPServer(("127.0.0.1", FAKE_PORT), FakeProvider)
     threading.Thread(target=fake.serve_forever, daemon=True).start()
     srv = subprocess.Popen([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "server.py")],
@@ -257,6 +268,10 @@ def main():
         c, meal = req("POST", "/api/meal-photo", {"image": jpeg}, hdr4)
         check("meal photo is read", c == 200 and meal.get("kcal") == 370 and len(meal.get("items", [])) == 2, str(meal))
         check("low confidence is flagged", meal.get("note", "").startswith("Low confidence"), str(meal))
+        seen_models = [(json.loads(b)["model"], '"image_url"' in b) for _, _, b in fake_seen]
+        check("photos go to the vision model, and nothing else does",
+              ("vision-model", True) in seen_models and all(m == "vision-model" for m, img in seen_models if img)
+              and not any(m == "vision-model" for m, img in seen_models if not img), str(seen_models)[:200])
         sent_photo = fake_seen[seen_before][2] if len(fake_seen) > seen_before else ""
         check("photo goes to the provider as an image, without the username",
               '"image_url"' in sent_photo and "Tester0" not in sent_photo)
@@ -343,6 +358,72 @@ def main():
         check("the admin can see what was learned", {"name": "dragon fruit smoothie", "unit": "glass", "kcal": 210} in learned.get("learned", []), str(learned))
         c, r = swap("2 samosas and a cup of chai", {**p5, "other": "force refused"})
         check("known foods still get their calories when the AI cannot write the tip", c == 200 and r["kcal"] == 610 and r["tip"] == "", f"{c} {r}")
+
+        # the coach chat: replies are built from the person, their day and Pune
+        today_tl = {"time": "13:05", "water": 3, "glasses": 11, "steps": [
+            {"time": "7:30 AM", "title": "Breakfast", "name": "Besan chilla", "state": "done"},
+            {"time": "1:00 PM", "title": "Lunch", "name": "Dal-palak thali", "state": "next"}]}
+        p0 = {**profile(0), "targets": {"kcal": 1900, "protein": 100}}
+        ask = lambda who, text: req("POST", "/api/chat", {"message": text, "profile": p0 if who == 0 else prof, "today": today_tl}, hdr0 if who == 0 else hdr3)
+        pune_of = lambda body: body.split("KNOWLEDGE (local food")[1].split("THE CONVERSATION SO FAR")[0]
+        c, r = ask(0, "where can I eat misal near Baner?")
+        sent = fake_seen[-1][2]
+        check("the coach answers and remembers what it learned", c == 200 and r["reply"] == "Try the ragi dosa." and r["facts"] == ["lives in Baner"], f"{c} {r}")
+        check("the reply is written from the person, their day and Pune",
+              all(x in sent for x in ("diabetes", "Besan chilla", "Dal-palak thali", "1900")) and pune_of(sent).count("Misal") >= 3
+              and "Tester0" not in sent, sent[:300])
+        check("a vegetarian is never shown a non-veg place", "Surve" not in sent and "Purepur" not in sent and "Cafe Diamond Queen" not in sent)
+        c, r = ask(0, "and what about dinner?")
+        sent = fake_seen[-1][2]
+        check("the next reply knows what was said before", "lives in Baner" in sent and "Try the ragi dosa." in sent and "where can I eat misal" in sent)
+        c, r = ask(0, "bad chicken please")
+        check("a reply that breaks the diet is rejected", c == 503 and "diet" in r.get("detail", ""), f"{c} {r}")
+        mine = pune_of(fake_seen[-1][2])
+        req("POST", "/api/profile", {**profile(3), "facts": ["works at Hinjewadi", "works at Hinjewadi", "x"]}, hdr3)
+        c, r = ask(3, "what should I have for dinner?")
+        theirs = fake_seen[-1][2]
+        check("what the app sets as the person's facts reaches the coach (cleaned, no duplicates)",
+              c == 200 and "works at Hinjewadi" in theirs and theirs.count("works at Hinjewadi") == 1 and "Sugran Swayampakghar" in theirs, f"{c} {r}")
+        check("two people asking the coach get different local picks", pune_of(theirs) != mine)
+        import coach
+        picked = coach.retrieve(coach.city("pune"), "egg bhurji pav", [], "egg", [], "s", k=40)
+        check("a dish is priced as itself, with its unit (egg bhurji pav is not just a pav)",
+              "egg bhurji pav, about 310 kcal per plate" in picked and "misal pav, about 550 kcal per plate" in picked)
+        check("chat has its own daily cap (5 here), apart from the other AI calls",
+              [ask(0, "hello")[0], ask(0, "hello 2")[0], ask(0, "hello 3")[0]] == [200, 200, 429])
+
+        # more cities are just folders: nothing in the code is about one city
+        _, listed = req("GET", "/api/cities")
+        check("the server lists every city folder, the built-in one and the extra one",
+              {c["id"] for c in listed.get("cities", [])} == {"pune", "testville"} and listed.get("default") == "pune", str(listed))
+        req("DELETE", "/api/me", headers=hdr2)
+        code7, new7 = req("POST", "/api/register", profile(7))
+        h7 = {"X-User-Id": new7["user_id"], "X-User-Key": new7["user_key"]}
+        p7 = {**profile(7), "targets": {"kcal": 1900, "protein": 100}}
+        chat7 = lambda text: req("POST", "/api/chat", {"message": text, "profile": p7, "today": today_tl}, h7)
+        req("POST", "/api/profile", {**profile(7), "city": "testville"}, h7)
+        c, r = chat7("where can I eat?")
+        sent = fake_seen[-1][2]
+        check("a person in another city is coached from that city's own places and dishes",
+              c == 200 and "Testville Dhaba" in sent and "TESTVILLE KNOWLEDGE" in sent and "ONE person in Testville, Testland" in sent
+              and "Bedekar Misal" not in sent and "in Pune" not in sent, sent[:240])
+        req("POST", "/api/profile", {**profile(7), "city": "nowhere"}, h7)
+        c, r = chat7("and for dinner?")
+        check("a city we have no data for is ignored", c == 200 and "Testville Dhaba" in fake_seen[-1][2])
+        c, r = req("POST", "/api/step-ai", {"mode": "replaced", "request": "1 zorba thali", "step": lunch, "profile": p7}, h7)
+        check("a city's own calorie file prices its dishes", c == 200 and r["kcal"] == 777 and "Testville" in fake_seen[-1][2], f"{c} {r}")
+        os.makedirs(os.path.join(cities, "newtown"))
+        open(os.path.join(cities, "newtown", "city.txt"), "w").write("name: Newtown\nregion: Newland\ncuisine: new food\n")
+        open(os.path.join(cities, "testville", "places.txt"), "a", encoding="utf-8").write("Late Cafe | Old Quarter | veg | ₹ | zorba thali | added later\n")
+        _, listed = req("GET", "/api/cities")
+        check("a city added while the server runs shows up without a restart", "newtown" in {c["id"] for c in listed.get("cities", [])}, str(listed))
+        c, r = chat7("another place for lunch?")
+        check("a place added to a city's file is used at once", c == 200 and "Late Cafe" in fake_seen[-1][2])
+        req("POST", "/api/profile", {**profile(7), "city": "newtown"}, h7)
+        c, r = chat7("where can I eat?")
+        sent = fake_seen[-1][2]
+        check("a city with no places listed is told not to name any restaurant",
+              c == 200 and "none are listed for Newtown yet" in sent and "Testville Dhaba" not in sent, sent[:240])
 
         # foods a person never wants suggested
         req("DELETE", "/api/me", headers=hdr3)

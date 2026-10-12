@@ -53,6 +53,13 @@ const val PASS_STEPS = 6
 
 object PlanEngine {
 
+    /** The same small number for the same text on every device: the Kotlin and web versions use the same arithmetic. */
+    private fun stable(s: String): Int {
+        var h = 0
+        for (c in s) h = (h * 31 + c.code) and 0x7fffffff
+        return h
+    }
+
     // ---------- time helpers ----------
     fun hm(s: String): Int {
         val p = s.split(":")
@@ -382,7 +389,8 @@ object PlanEngine {
                     // The plan's meals, then the offline planner's, then (only if nothing is left) the plan unfiltered: better a meal than a gap.
                     val pool = own.filter(ok).ifEmpty { localPlan(p).meals[slot].orEmpty().filter(ok) }
                         .ifEmpty { own.ifEmpty { localPlan(p).meals[slot].orEmpty() } }
-                    val m = pool[((idx + STEP_IDS.indexOf(slot) + swaps(slot)) % pool.size + pool.size) % pool.size]
+                    val who = stable(p.username + ":" + slot) % 1000       // each person cycles each meal slot from their own start, so the same profile does not mean the same plate
+                    val m = pool[((idx + STEP_IDS.indexOf(slot) + swaps(slot) + who) % pool.size + pool.size) % pool.size]
                     val kcal = ((t.kcal * (SHARE[slot] ?: 0) / 100.0) / 10).roundToInt() * 10
                     steps += Step(slot, "meal", time, SLOT_TITLE.getValue(slot), kcal, m.name, m.items, m.skip)
                 }

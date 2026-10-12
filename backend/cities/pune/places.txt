@@ -1,0 +1,62 @@
+# Pune eateries the coach may name. One per line:  name | area | type | price | known for | note
+# type: veg, nonveg (serves meat) or both. price: a rough guide only (a rupee sign per step up, ? when no source gave one).
+# Built on 11 Oct 2026 from public guides (LBB, Homegrown, Curly Tales, Swiggy blog, Outlook Traveller, MyPunePulse, Team-BHP threads).
+# The guides disagree on some addresses and go out of date, so hours, prices and menus must be checked before going.
+# Add a place by adding a line. The coach is told to name only places listed here.
+
+# misal
+Bedekar Misal | Narayan Peth (a branch in Dhankawadi) | veg | ₹ | misal pav, a sweet-and-hot misal masala | open since 1948; misal is oily, ask for less tarri
+Katakirr Misal | Karve Road and Dhole Patil Road, outlets across Pune | veg | ₹ | Kolhapuri-style misal, extra-spicy tikhat misal | very spicy, not for acidity days
+Shree Kala Snacks Centre (Abachi Misal) | Rasta Peth | veg | ₹ | very spicy misal pav | in a small lane near the railway station
+Ramnath Misal | Tilak Road | veg | ₹ | misal pav | location from one guide only
+Shree Krishna Bhuvan | Sadashiv Peth | veg | ₹ | misal and snacks | on Tilak Road near Pantancha Gate
+Appa Misalwale | Narayan Peth | veg | ₹ | misal pav |
+Newale Misal | Kondhwa | veg | ₹ | misal pav |
+
+# Irani cafes and bakeries
+Cafe Goodluck | FC Road (Deccan Gymkhana) | both | ₹₹ | bun maska, Irani chai, keema pav, egg bhurji, bun omelette, biryani, caramel custard | since 1935; butter and fried food heavy, opens early
+Cafe Yezdan | Sachapir Street, Camp | both | ₹ | brun maska, egg bhurji, bun omelette | Irani breakfast
+Cafe Diamond Queen | Camp | nonveg | ₹₹ | chicken biryani, mutton biryani, murg musallam, Irani chai | more of a restaurant than an Irani cafe
+The Irani Cafe | Camp (Agarkar Nagar) | both | ₹₹ | bun cheese omelette, chicken mayo sandwich | reviews call the biryani average
+Kayani Bakery | Camp (a few listings say Deccan) | both | ₹ | Shrewsbury biscuits, mawa cake, nankhatai | since 1955, closed Sundays; ask about egg, sweet and butter heavy
+
+# South Indian and street food
+Vaishali | FC Road | veg | ₹₹ | vada sambar, Mysore masala dosa, uttapam, sabudana vada, pav bhaji, SPDP | crowded; idli and plain dosa are the lighter picks
+Roopali | FC Road | veg | ₹₹ | dosa, vada, sambar, filter coffee | sister place of Vaishali with indoor and outdoor seating
+Joshi Wadewale | Deccan and FC Road area (address not confirmed) | veg | ₹ | vada pav, sabudana wada | about ₹250 for two
+Garden Vada Pav Centre | Pune (address not confirmed) | veg | ₹ | vada pav, jumbo vada pav, masala chaach | vada pav roughly ₹20 to 40
+
+# Maharashtrian thali, vegetarian
+Shabree | FC Road (Hotel Parichay) | veg | ₹₹ | Maharashtrian thali, puran poli, masala bhat, aluchi bhaji, kadhi, thalipeeth | thali about ₹320 with refills; crowded, go early
+Hotel Shreyas | Apte Road | veg | ₹₹ | Maharashtrian thali with 15+ dishes, puran poli | unlimited thali, heavy
+Krishna Dining | Law College Road | veg | ₹₹ | unlimited Maharashtrian thali | about ₹370
+Asha Dining Hall | Apte Road | veg | ₹ | thali, seasonal bhaji | one of Pune's older dining halls, about ₹180
+Sugran Swayampakghar | Wakad and Hinjewadi | veg | ₹₹ | Maharashtrian thali | a reviewer calls it not oily; a good office lunch
+Janaseva Bhojanalaya | Deccan | veg | ₹ | home-style thali | named in a Team-BHP thread
+Sukhkarta Dining Hall | Mayur Colony, Kothrud | veg | ₹ | home-style thali | named in a Team-BHP thread
+Pruthvi Vegetarianism | Karve Road (Happy Colony), Kothrud | veg | ₹₹ | Punjabi, Chinese and South Indian vegetarian menu | open 7 am to 11 pm on an older listing
+
+# Kolhapuri and non-veg
+Purepur Kolhapur | Karve Nagar | nonveg | ₹₹ | tambda and pandhra rassa thali | non-veg thali from about ₹210
+Surve's Pure Non-Veg | four locations in Pune | nonveg | ₹₹ | mutton thali, chicken thali | mutton thali from about ₹200
+Maharaja | Dhole Patil Road | nonveg | ₹₹ | tambda and pandhra rassa, chicken gravy, biryani |
+Sugran's Kolhapuri Non-Veg | Sadashiv Peth | nonveg | ₹₹ | chicken, mutton and fish thalis | from about ₹240
+Maratha Kolhapur Darbar | Sadashiv Peth | nonveg | ₹ | chicken, mutton and fish thalis | from about ₹180
+Hotel Gavran Kolhapuri | Kharadi | nonveg | ₹₹ | chicken and mutton thalis |
+Hotel Maratheshahi | Kharadi | both | ₹₹ | mutton, chicken and mass vadi thalis | heavy, not a light lunch
+Maharashtrian Darbar | Phoenix Marketcity | both | ₹₹ | Kolhapuri biryani, mutton and chicken kheema pav, puran poli |
+LunchBox Meals and Thalis | Viman Nagar | both | ₹ | thalis | the listing is mixed up with Nanded, confirm the branch
+
+# health cafes
+Chafa Cafe and Studio | Koregaon Park | veg | ₹₹ | smoothie bowls, Buddha bowls, open sandwiches, whole-wheat pasta | health cafe that is also a yoga studio
+Sante Spa Cuisine | Koregaon Park and Baner | veg | ₹₹₹ | ragi and wheat healthy pizza, baked goods, Jain-friendly items | vegan; about ₹2000 for two
+The Organic Cookhouse | Koregaon Park | veg | ₹₹ | breakfast, salads | the menu shows calories
+HealthyBee | Baner | veg | ₹₹ | palak paneer combo, protein packs, salads, wraps, brown rice bowl | one reviewer reports uneven portions
+Green Me Up | Aundh | veg | ₹₹ | superfood salad, Mediterranean salad | the review found is from 2023, check it is open
+The Sugar Free Keto Kafe (Artinci) | Baner | veg | ₹₹ | sugar-free vegan desserts, healthy food | the closest found to a diabetic-friendly place
+
+# sweets
+Chitale Bandhu Mithaiwale | Paud Road Kothrud, many outlets | veg | ₹ | bakarwadi, shrikhand, puran poli, modak | since 1950
+Kaka Halwai | outlets across Pune | veg | ₹ | karanji, jalebi, motichur ladoo, modak, anjir barfi | since 1892
+Desai Bandhu Ambewale | Pune | veg | ₹₹ | mango shrikhand and amrakhand | made with real mango pieces
+Sujata Mastani | FC Road and other outlets | veg | ₹₹ | mastani | a very sugary treat

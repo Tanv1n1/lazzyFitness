@@ -1,0 +1,6 @@
+# One city. The folder name is its id (use lowercase letters), so add a city by adding a folder like this one:
+#   city.txt (this file), places.txt, dishes.txt, and optionally foods.txt (extra calorie lines, same format as ../../foods.txt).
+# The server notices new and changed files by itself, no restart needed.
+name: Pune
+region: Maharashtra, India
+cuisine: Maharashtrian home cooking (bhakri, varan, usal, thalipeeth, poha, misal at home, sol kadhi, taak)

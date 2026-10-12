@@ -171,6 +171,7 @@ fun Onboarding(initial: Profile?, hadConsent: Boolean, initialServer: String, in
                                 "and any note you typed, but never your username, to a third-party AI service. " +
                                 "A meal photo you choose to analyse goes to the same service and is not saved. " +
                                 "Skipped steps, what you ate instead and your change requests are shared with your coach. " +
+                                "What you type to the coach, and short notes it keeps about you (like your area and what you like to eat), go to the same AI service. " +
                                 "Leave this off and everything stays on your phone, with the offline planner. " +
                                 "You can delete your data from the Me tab, but not what the AI service has already received.",
                                 fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)

@@ -3,10 +3,13 @@
 Calories come from foods.txt (a seed table) and from a `foods` table in the database that remembers what the AI
 estimated for foods the seed does not have. The AI is only asked about foods nobody has priced yet. Standard library only.
 """
+import os
 import re
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+# City folders: the ones shipped with the code, plus any folder named in CITIES_DIR (a mounted volume, so a city can be added without a deploy).
+CITY_DIRS = [HERE / "cities", *([Path(os.environ["CITIES_DIR"])] if os.environ.get("CITIES_DIR") else [])]
 UNITS = {"piece", "slice", "plate", "bowl", "cup", "glass", "tbsp", "tsp", "handful", "scoop", "serving", "100g"}
 MAX_AVOID = 25
 
@@ -26,22 +29,35 @@ def norm(text):
     return " ".join(singular(w) for w in re.findall(r"[a-z]+", str(text).lower()))
 
 
+def food_files():
+    """Every calorie file: the main one, then each city's own, so a city can add or override foods."""
+    return [HERE / "foods.txt"] + [f for d in CITY_DIRS if d.is_dir() for f in sorted(d.glob("*/foods.txt"))]
+
+
 def _load():
     table = {}
-    for line in (HERE / "foods.txt").read_text().splitlines():
-        if not line.strip() or line.startswith("#"):
-            continue
-        name, unit, kcal, *rest = [p.strip() for p in line.split("|")]
-        if unit not in UNITS:
-            raise ValueError(f"foods.txt: unknown unit {unit!r} for {name}")
-        entry = (unit, int(kcal))
-        for key in [name] + (rest[0].split(",") if rest and rest[0] else []):
-            table[norm(key)] = entry
+    for path in food_files():
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.strip() or line.startswith("#"):
+                continue
+            name, unit, kcal, *rest = [p.strip() for p in line.split("|")]
+            if unit not in UNITS:
+                raise ValueError(f"{path.parent.name}/{path.name}: unknown unit {unit!r} for {name}")
+            entry = (unit, int(kcal))
+            for key in [name] + (rest[0].split(",") if rest and rest[0] else []):
+                table[norm(key)] = entry
     return table
 
 
 TABLE = _load()
 FOOD_WORDS = {w for k in TABLE for w in k.split()}
+
+
+def reload():
+    """Read the calorie files again, after one was added or changed."""
+    global TABLE, FOOD_WORDS
+    TABLE = _load()
+    FOOD_WORDS = {w for k in TABLE for w in k.split()}
 
 
 # ---------------------------------------------------------------- reading what was eaten
@@ -118,6 +134,12 @@ def _price(qty, unit, per):
     table_unit, kcal = per
     share = 1 if unit in (None, table_unit) else _EQUIV.get((unit, table_unit))
     return None if share is None else qty * share * kcal
+
+
+def exact(name):
+    """(unit, kcal) when the seed table has exactly this food, else None. Unlike estimate(), it never settles for a food that
+    merely ends the name: "egg bhurji pav" is not "pav"."""
+    return TABLE.get(norm(name))
 
 
 def estimate(text, c=None):
